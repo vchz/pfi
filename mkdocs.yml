@@ -1,0 +1,52 @@
+site_name: pfi
+site_description: Documentation for the package PFI (Probability Flow Inference).
+site_author: Victor Chardès & Suryanarayana Maddu
+theme:
+  name: material
+  features:
+        - navigation.tabs
+        - navigation.tabs.sticky
+        - toc.integrate
+extra_css:
+  - style/custom_style.css
+exclude_docs: |
+    tests/
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: numpy
+            docstring_section_style: list
+            inherited_members: true
+            show_root_heading: true
+            show_source: false
+            show_signature: true
+            heading_level: 2
+            show_symbol_type_toc: true
+            show_symbol_type_heading: true
+            merge_init_into_class: true
+            type_parameter_headings: true
+            filters:
+              - "^__init__$"
+              - "!^__.*__$"
+              - "!^_.*"
+              - "!forward"
+  - mkdocs-autoapi:
+        autoapi_dir: pfi  
+        autoapi_keep_files: true  
+        autoapi_root: api
+        autoapi_add_nav_entry: false
+nav:
+  - Getting started: index.md
+  - Documentation: api/
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences

@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: pfi
+Version: 0.1.0
+Summary: PFI package
+Requires-Dist: numpy
+Requires-Dist: torch
+Requires-Dist: tqdm
+Requires-Dist: POT
+Requires-Dist: geomloss
+Requires-Dist: torchcubicspline
+Requires-Dist: pytest

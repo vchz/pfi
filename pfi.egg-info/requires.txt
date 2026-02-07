@@ -1,0 +1,7 @@
+numpy
+torch
+tqdm
+POT
+geomloss
+torchcubicspline
+pytest

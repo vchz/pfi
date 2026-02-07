@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pfi"
+version = "0.1.0"
+description = "PFI package"
+dependencies = [
+  "numpy",
+  "torch",
+  "tqdm",
+  "POT",
+  "geomloss",
+  "torchcubicspline",
+  "pytest",
+]
+
+[tool.setuptools]
+packages = { find = { where = ["."] } }
+
+[tool.pytest.ini_options]
+testpaths = ["tests/"]
