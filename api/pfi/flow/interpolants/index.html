@@ -1310,35 +1310,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.BaseInterpolant.device">device</span></code></b>
-              (<code><span title="str">str</span> or <span title="torch.device">device</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Computation device.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.BaseInterpolant.y_fit_">y_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training trajectories, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.BaseInterpolant.t_fit_">t_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training time nodes, set by <code>fit</code>.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1512,51 +1483,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.ChebyshevInterpolant.reg_">reg_</span></code></b>
-              (<code><span title="float">float</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Curvature regularization weight.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.ChebyshevInterpolant.y_fit_">y_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training trajectories, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.ChebyshevInterpolant.t_fit_">t_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training time nodes, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.ChebyshevInterpolant.p_">p_</span></code></b>
-              (<code><span title="callable">callable</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Interpolant function set by <code>_fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.ChebyshevInterpolant.p_prime_">p_prime_</span></code></b>
-              (<code><span title="callable">callable</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Derivative function set by <code>_fit</code>.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1720,27 +1646,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.LinearInterpolant.y_fit_">y_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training trajectories, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.LinearInterpolant.t_fit_">t_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training time nodes, set by <code>fit</code>.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1899,35 +1804,6 @@
           –
           <div class="doc-md-description">
             <p>Computation device inherited from <code>pfi.flow.interpolants.BaseInterpolant</code>.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.SplineInterpolant.y_fit_">y_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training trajectories, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.SplineInterpolant.t_fit_">t_fit_</span></code></b>
-              (<code>torch.Tensor of shape (batch_size, n_nodes)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Training time nodes, set by <code>fit</code>.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.interpolants.SplineInterpolant.spline_">spline_</span></code></b>
-              (<code><span title="torchcubicspline.interpolate.NaturalCubicSpline">NaturalCubicSpline</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Fitted spline object, set by <code>_fit</code>.</p>
           </div>
         </li>
     </ul>
@@ -2290,7 +2166,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate", "navigation.mobile"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../../../../assets/javascripts/bundle.79ae519e.min.js"></script>

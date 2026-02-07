@@ -1419,27 +1419,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.DNN.bn">bn</span></code></b>
-              (<code><a class="autorefs autorefs-internal" title="              BatchNorm(mean, std) (pfi.utils.nns.BatchNorm)" href="nns/#pfi.utils.nns.BatchNorm">BatchNorm</a></code>)
-          –
-          <div class="doc-md-description">
-            <p>Feature normalizer.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.DNN.net">net</span></code></b>
-              (<code><span title="torch.nn.Sequential">Sequential</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Stacked linear and activation layers.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1571,52 +1550,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FastTensorDataLoader.tensors">tensors</span></code></b>
-              (<code>tuple of torch.Tensor or list of torch.Tensor</code>)
-          –
-          <div class="doc-md-description">
-            <p>Managed tensors. Stored as a tuple after initialization and as a list
-after shuffling.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FastTensorDataLoader.dataset_len">dataset_len</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Number of samples in the dataset.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FastTensorDataLoader.batch_size">batch_size</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Batch size.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FastTensorDataLoader.shuffle">shuffle</span></code></b>
-              (<code><span title="bool">bool</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Whether shuffling is enabled.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FastTensorDataLoader.n_batches">n_batches</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Number of batches per full pass.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1688,35 +1621,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Constant value assigned to that feature.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FreezeVarDNN.dnn">dnn</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Wrapped network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FreezeVarDNN.var_index">var_index</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Frozen feature index.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.FreezeVarDNN.var_value">var_value</span></code></b>
-              (<code><span title="float">float</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Frozen feature value.</p>
           </div>
         </li>
     </ul>
@@ -1801,19 +1705,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Activation used in surrounding network to set initialization gain.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.LayerNoWN.linear">linear</span></code></b>
-              (<code><span title="torch.nn.Linear">Linear</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Internal linear transformation.</p>
           </div>
         </li>
     </ul>
@@ -1914,27 +1805,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Hidden activation module.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.SpectralNormDNN.bn">bn</span></code></b>
-              (<code><a class="autorefs autorefs-internal" title="              BatchNorm(mean, std) (pfi.utils.nns.BatchNorm)" href="nns/#pfi.utils.nns.BatchNorm">BatchNorm</a></code>)
-          –
-          <div class="doc-md-description">
-            <p>Feature normalizer.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.SpectralNormDNN.net">net</span></code></b>
-              (<code><span title="torch.nn.Sequential">Sequential</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Stacked spectrally-normalized layers.</p>
           </div>
         </li>
     </ul>
@@ -2579,7 +2449,7 @@ after shuffling.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate", "navigation.mobile"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>

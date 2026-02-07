@@ -1422,27 +1422,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.AutonomousFlow.drift_model">drift_model</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Drift network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.AutonomousFlow.Ndim">Ndim</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>State dimension.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1539,51 +1518,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.CLEFlow.drift_model">drift_model</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Drift network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.CLEFlow.score">score</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Score network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.CLEFlow.Ndim">Ndim</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>State dimension.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.CLEFlow.vol">vol</span></code></b>
-              (<code><span title="float">float</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Volume scale.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.CLEFlow.lx">lx</span></code></b>
-              (<code><span title="float">float</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Linear degradation coefficient.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1643,27 +1577,6 @@
         </li>
         <li class="doc-section-item field-body">
             <b><code>Ndim</code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>State dimension.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.GradientFlow.potential_model">potential_model</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Potential network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.GradientFlow.Ndim">Ndim</span></code></b>
               (<code><span title="int">int</span></code>)
           –
           <div class="doc-md-description">
@@ -1740,43 +1653,6 @@
         </li>
         <li class="doc-section-item field-body">
             <b><code>D</code></b>
-              (<code>torch.Tensor of shape (ndim, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Diffusion matrix.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.OUFlow.score">score</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Score model.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.OUFlow.Ndim">Ndim</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>State dimension.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.OUFlow.B">B</span></code></b>
-              (<code>torch.nn.Parameter of shape (ndim, ndim)</code>)
-          –
-          <div class="doc-md-description">
-            <p>Learnable drift matrix.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.flow.models.OUFlow.D">D</span></code></b>
               (<code>torch.Tensor of shape (ndim, ndim)</code>)
           –
           <div class="doc-md-description">
@@ -1871,7 +1747,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate", "navigation.mobile"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../../../../assets/javascripts/bundle.79ae519e.min.js"></script>
