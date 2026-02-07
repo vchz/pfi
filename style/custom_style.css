@@ -1,0 +1,22 @@
+/* 1. Navigation Tabs (Top bar links) */
+.md-tabs__link {
+    font-size: 0.8rem !important;
+}
+
+/* 2. Navigation Sidebar (The left/right menus) */
+.md-nav {
+    font-size: 0.7rem !important;
+}
+
+/* 3. Header Title (Your project name in the top left) */
+.md-header__title {
+    font-size: 1.2rem !important;
+}
+
+#__nav_2_label {
+    font-size: 0.8rem !important;
+}
+
+.md-sidebar--primary {
+    width: 28%; /* Adjust this value as needed */
+}
