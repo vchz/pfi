@@ -13,12 +13,6 @@ class LinearInterpolant(BaseInterpolant):
     device : str or torch.device, default='cpu'
         Computation device inherited from `pfi.flow.interpolants.BaseInterpolant`.
 
-    Attributes
-    ----------
-    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
-        Training trajectories, set by `fit`.
-    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
-        Training time nodes, set by `fit`.
     """
 
     def _fit(self):

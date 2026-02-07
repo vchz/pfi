@@ -1600,27 +1600,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.DNN.bn">bn</span></code></b>
-              (<code><a class="autorefs autorefs-internal" title="              BatchNorm(mean, std) (pfi.utils.nns.BatchNorm)" href="#pfi.utils.nns.BatchNorm">BatchNorm</a></code>)
-          –
-          <div class="doc-md-description">
-            <p>Feature normalizer.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.DNN.net">net</span></code></b>
-              (<code><span title="torch.nn.Sequential">Sequential</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Stacked linear and activation layers.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1752,52 +1731,6 @@
     </ul>
 
 
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FastTensorDataLoader.tensors">tensors</span></code></b>
-              (<code>tuple of torch.Tensor or list of torch.Tensor</code>)
-          –
-          <div class="doc-md-description">
-            <p>Managed tensors. Stored as a tuple after initialization and as a list
-after shuffling.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FastTensorDataLoader.dataset_len">dataset_len</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Number of samples in the dataset.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FastTensorDataLoader.batch_size">batch_size</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Batch size.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FastTensorDataLoader.shuffle">shuffle</span></code></b>
-              (<code><span title="bool">bool</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Whether shuffling is enabled.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FastTensorDataLoader.n_batches">n_batches</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Number of batches per full pass.</p>
-          </div>
-        </li>
-    </ul>
-
-
 
 
 
@@ -1869,35 +1802,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Constant value assigned to that feature.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FreezeVarDNN.dnn">dnn</span></code></b>
-              (<code><span title="torch.nn.Module">Module</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Wrapped network.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FreezeVarDNN.var_index">var_index</span></code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Frozen feature index.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.FreezeVarDNN.var_value">var_value</span></code></b>
-              (<code><span title="float">float</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Frozen feature value.</p>
           </div>
         </li>
     </ul>
@@ -1982,19 +1886,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Activation used in surrounding network to set initialization gain.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.LayerNoWN.linear">linear</span></code></b>
-              (<code><span title="torch.nn.Linear">Linear</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Internal linear transformation.</p>
           </div>
         </li>
     </ul>
@@ -2095,27 +1986,6 @@ after shuffling.</p>
           –
           <div class="doc-md-description">
             <p>Hidden activation module.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.SpectralNormDNN.bn">bn</span></code></b>
-              (<code><a class="autorefs autorefs-internal" title="              BatchNorm(mean, std) (pfi.utils.nns.BatchNorm)" href="#pfi.utils.nns.BatchNorm">BatchNorm</a></code>)
-          –
-          <div class="doc-md-description">
-            <p>Feature normalizer.</p>
-          </div>
-        </li>
-        <li class="doc-section-item field-body">
-          <b><code><span title="pfi.utils.nns.SpectralNormDNN.net">net</span></code></b>
-              (<code><span title="torch.nn.Sequential">Sequential</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>Stacked spectrally-normalized layers.</p>
           </div>
         </li>
     </ul>

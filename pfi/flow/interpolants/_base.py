@@ -9,14 +9,6 @@ class BaseInterpolant:
     device : str or torch.device, default='cpu'
         Device used by derived interpolants.
 
-    Attributes
-    ----------
-    device : str or torch.device
-        Computation device.
-    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
-        Training trajectories, set by `fit`.
-    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
-        Training time nodes, set by `fit`.
     """
 
     def __init__(

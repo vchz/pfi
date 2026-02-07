@@ -18,18 +18,6 @@ class OUScore(nn.Module):
     D : torch.Tensor of shape (ndim, ndim)
         Diffusion matrix.
 
-    Attributes
-    ----------
-    Ndim : int
-        State dimension.
-    S0 : torch.Tensor of shape (ndim, ndim)
-        Initial covariance.
-    B : torch.nn.Parameter of shape (ndim, ndim)
-        Learnable drift matrix parameter.
-    m0 : torch.Tensor of shape (ndim,)
-        Initial mean.
-    D : torch.Tensor of shape (ndim, ndim)
-        Diffusion matrix.
     """
 
     def __init__(

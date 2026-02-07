@@ -172,18 +172,6 @@ class ChebyshevInterpolant(BaseInterpolant):
     device : str or torch.device, default='cpu'
         Computation device.
 
-    Attributes
-    ----------
-    reg_ : float
-        Curvature regularization weight.
-    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
-        Training trajectories, set by `fit`.
-    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
-        Training time nodes, set by `fit`.
-    p_ : callable
-        Interpolant function set by `_fit`.
-    p_prime_ : callable
-        Derivative function set by `_fit`.
     """
 
     def __init__(

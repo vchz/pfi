@@ -22,18 +22,6 @@ class CLEFlow(nn.Module):
     lx : float, default=1.0
         Linear degradation coefficient.
 
-    Attributes
-    ----------
-    drift_model : torch.nn.Module
-        Drift network.
-    score : torch.nn.Module
-        Score network.
-    Ndim : int
-        State dimension.
-    vol : float
-        Volume scale.
-    lx : float
-        Linear degradation coefficient.
     """
 
     def __init__(
@@ -90,12 +78,6 @@ class GradientFlow(nn.Module):
     Ndim : int
         State dimension.
 
-    Attributes
-    ----------
-    potential_model : torch.nn.Module
-        Potential network.
-    Ndim : int
-        State dimension.
     """
 
     def __init__(
@@ -146,12 +128,6 @@ class AutonomousFlow(nn.Module):
     Ndim : int
         State dimension.
 
-    Attributes
-    ----------
-    drift_model : torch.nn.Module
-        Drift network.
-    Ndim : int
-        State dimension.
     """
 
     def __init__(
@@ -194,16 +170,6 @@ class OUFlow(nn.Module):
     D : torch.Tensor of shape (ndim, ndim)
         Diffusion matrix.
 
-    Attributes
-    ----------
-    score : torch.nn.Module
-        Score model.
-    Ndim : int
-        State dimension.
-    B : torch.nn.Parameter of shape (ndim, ndim)
-        Learnable drift matrix.
-    D : torch.Tensor of shape (ndim, ndim)
-        Diffusion matrix.
     """
 
     def __init__(

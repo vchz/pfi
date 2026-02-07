@@ -59,10 +59,6 @@ class LayerNoWN(nn.Module):
     activation : torch.nn.Module
         Activation used in surrounding network to set initialization gain.
 
-    Attributes
-    ----------
-    linear : torch.nn.Linear
-        Internal linear transformation.
     """
 
     def __init__(
@@ -115,12 +111,6 @@ class DNN(nn.Module):
     activation : torch.nn.Module, default=torch.nn.Tanh()
         Hidden activation module.
 
-    Attributes
-    ----------
-    bn : BatchNorm
-        Feature normalizer.
-    net : torch.nn.Sequential
-        Stacked linear and activation layers.
     """
 
     def __init__(
@@ -195,12 +185,6 @@ class SpectralNormDNN(nn.Module):
     activation : torch.nn.Module, default=torch.nn.Tanh()
         Hidden activation module.
 
-    Attributes
-    ----------
-    bn : BatchNorm
-        Feature normalizer.
-    net : torch.nn.Sequential
-        Stacked spectrally-normalized layers.
     """
 
     def __init__(
@@ -274,19 +258,6 @@ class FastTensorDataLoader:
     shuffle : bool, default=False
         If ``True``, shuffle samples at each iteration.
 
-    Attributes
-    ----------
-    tensors : tuple of torch.Tensor or list of torch.Tensor
-        Managed tensors. Stored as a tuple after initialization and as a list
-        after shuffling.
-    dataset_len : int
-        Number of samples in the dataset.
-    batch_size : int
-        Batch size.
-    shuffle : bool
-        Whether shuffling is enabled.
-    n_batches : int
-        Number of batches per full pass.
     """
 
     def __init__(
@@ -438,14 +409,6 @@ class FreezeVarDNN(nn.Module):
     var_value : float
         Constant value assigned to that feature.
 
-    Attributes
-    ----------
-    dnn : torch.nn.Module
-        Wrapped network.
-    var_index : int
-        Frozen feature index.
-    var_value : float
-        Frozen feature value.
     """
 
     def __init__(
