@@ -7,7 +7,6 @@ theme:
         - navigation.tabs
         - navigation.tabs.sticky
         - toc.integrate
-        - navigation.mobile
 extra_css:
   - style/custom_style.css
 exclude_docs: |
