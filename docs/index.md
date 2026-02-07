@@ -56,7 +56,7 @@ score_reg = ScoreMatching(
 score_reg.fit(X)
 ```
 
-## Validate The Score
+### Validate The Score
 
 `ScoreMatching.score(X)` computes per-time energy distance between generated and observed samples.
 Lower values indicate better match.

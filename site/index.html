@@ -360,12 +360,7 @@
   
 </li>
         
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
+          <li class="md-nav__item">
   <a href="#validate-the-score" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -374,8 +369,7 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Validate The Score">
-      <ul class="md-nav__list">
+</li>
         
           <li class="md-nav__item">
   <a href="#choose-an-interpolant" class="md-nav__link">
@@ -1421,7 +1415,7 @@ The last column is time, and the first <code>ndim</code> columns are state coord
 </span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="p">)</span>
 </span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="n">score_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
-<h2 id="validate-the-score">Validate The Score</h2>
+<h3 id="validate-the-score">Validate The Score</h3>
 <p><code>ScoreMatching.score(X)</code> computes per-time energy distance between generated and observed samples.
 Lower values indicate better match.</p>
 <p><div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">ed_per_time</span> <span class="o">=</span> <span class="n">score_reg</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
