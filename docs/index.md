@@ -8,7 +8,7 @@ This documentation explains installation, basic usage, validation, and customiza
 Clone the repository and install in editable mode:
 
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:vchz/pfi.git
 cd pfi
 pip install -e .
 ```
