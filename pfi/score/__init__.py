@@ -1,7 +1,6 @@
 """Public score-estimation APIs and solver modules.
 
-This submodule exposes the score matching estimator alongside analytical
-score models and solver backends.
+This submodule exposes the score matching estimator alongside score models and solver backends.
 """
 
 from ._base import ScoreMatching

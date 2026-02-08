@@ -1,4 +1,4 @@
-"""Analytical score models used by score-matching and flow estimators."""
+"""Score models used by score-matching."""
 
 import torch
 import torch.nn as nn
