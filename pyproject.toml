@@ -12,7 +12,7 @@ dependencies = [
   "tqdm",
   "POT",
   "geomloss",
-  "torchcubicspline",
+  "torchcubicspline @ git+https://github.com/patrick-kidger/torchcubicspline.git",
   "pytest",
 ]
 
