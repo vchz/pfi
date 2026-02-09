@@ -2,7 +2,7 @@ site_name: pfi
 site_description: Documentation for the package PFI (Probability Flow Inference).
 site_author: Victor Chardès & Suryanarayana Maddu
 repo_url: https://github.com/vchz/pfi/
-repo_name: vchz/pfi
+repo_name: /vchz/pfi
 theme:
   name: material
   features:
