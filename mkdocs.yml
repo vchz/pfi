@@ -13,7 +13,7 @@ theme:
         - content.action.view
   icon:
     repo: fontawesome/brands/github
-edit_uri: edit/main/docs/
+edit_uri: edit/main/
 extra_css:
   - style/custom_style.css
 exclude_docs: |
