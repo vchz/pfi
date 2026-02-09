@@ -23,7 +23,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [./pfi]
+          paths: [pfi]
           options:
             docstring_style: numpy
             docstring_section_style: list
