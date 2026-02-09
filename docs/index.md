@@ -1,7 +1,7 @@
 # PFI Documentation
 
 PFI provides modular tools for score matching and flow regression on snapshot data.
-This documentation explains installation, basic usage, validation, and customization.
+This documentation explains installation, basic usage, validation, and customization. Currently, the code was mostly documented using GPT 5.2-Codex. We went through some of the documentation to make sure it is correct, but it is likely some mistakes slipped through (we already corrected some). Beware.
 
 ## Installation
 
