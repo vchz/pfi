@@ -7,6 +7,26 @@ import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
 
+class _CompoundModel(nn.Module):
+    """Common container model with optional scale propagation to `net`."""
+
+    def __init__(
+        self,
+        net,
+    ):
+        super(_CompoundModel, self).__init__()
+        self.net = net
+
+    def set_scales(
+        self,
+        mean,
+        std,
+    ):
+        if hasattr(self.net, "set_scales"):
+            self.net.set_scales(mean, std)
+        return self
+
+
 class BatchNorm(object):
     """Simple affine normalizer ``(x - mean) / std``.
 
@@ -245,7 +265,24 @@ class SpectralNormDNN(nn.Module):
         """
         return self.net(self.bn(x))
 
+    def set_scales(self, mean, std):
+        """Update normalization statistics.
 
+        Parameters
+        ----------
+        mean : torch.Tensor of shape (1, n_features)
+            New feature means.
+        std : torch.Tensor of shape (1, n_features)
+            New feature standard deviations.
+
+        Returns
+        -------
+        self : DNN
+            Estimator instance.
+        """
+        self.bn = BatchNorm(mean, std)
+        return self
+    
 class FastTensorDataLoader:
     """Lightweight mini-batch iterator over in-memory tensors.
 

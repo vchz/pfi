@@ -10,6 +10,7 @@ from .simulations import (
     toggle_switch,
 )
 from .data import (
+    load_data,
     subsample_shuffle,
     snapshots_from_X,
     X_from_snapshots,
@@ -18,6 +19,7 @@ from .nns import (
     BatchNorm,
     DNN,
     FastTensorDataLoader,
+    loss_grad_std,
     LayerNoWN,
     SpectralNormDNN,
     divergence,
@@ -29,9 +31,10 @@ __all__ = [
     "g_rate",
     "simulate_toggle_switch",
     "simulate_ornstein_uhlenbeck",
+    "load_data",
     "X_from_snapshots",
     "snapshots_from_X",
-    "susbample_shuffle",
+    "subsample_shuffle",
     "BatchNorm",
     "LayerNoWN",
     "DNN",

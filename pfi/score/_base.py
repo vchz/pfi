@@ -71,13 +71,14 @@ class ScoreMatching:
         self.times_ = np.unique(X[:, -1])
 
         if self.solver == "dsm":
-            self.model = DSM_(
+            self.model, loss_hist = DSM_(
                 dist,
                 times,
                 self.model,
                 device=self.device,
                 **self.solver_kwargs,
             )
+            self.loss_ = np.asarray(loss_hist)
             self.model_ = FreezeVarDNN(
                 dnn=self.model,
                 var_index=self.Ndim_,
@@ -143,13 +144,15 @@ class ScoreMatching:
 
         if self.solver == "dsm":
 
+            init_ = 4*torch.rand((nsamples,self.Ndim_+2)) + 1
+            init_[:,0:self.Ndim_] = X[:,0:self.Ndim_]
             time_ = X[0, -1]
             with torch.no_grad():
                 gen, _ = generate_data_DSM(
                     maxiter=maxiter,
                     infNet=self.model,
                     nsamples=nsamples,
-                    init_=X,
+                    init_=init_,
                     time_=time_,
                     L=self.solver_kwargs["L"],
                     ndim=self.Ndim_,

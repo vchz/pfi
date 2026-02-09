@@ -3,13 +3,14 @@
 import torch
 import torch.nn as nn
 
+from ..utils.nns import _CompoundModel
 
-class OUScore(nn.Module):
+class OUScore(_CompoundModel):
     """Analytical score function for Gaussian Ornstein-Uhlenbeck dynamics.
 
     Parameters
     ----------
-    B : torch.Tensor of shape (ndim, ndim)
+    net : torch.Tensor of shape (ndim, ndim)
         Drift matrix.
     m0 : torch.Tensor of shape (ndim,)
         Initial mean.
@@ -22,15 +23,14 @@ class OUScore(nn.Module):
 
     def __init__(
         self,
-        B,
+        net,
         m0,
         S0,
         D,
     ):
-        super(OUScore, self).__init__()
+        super(OUScore, self).__init__(nn.Parameter(net))
         self.Ndim = m0.shape[0]
         self.S0 = S0
-        self.B = nn.Parameter(B)
         self.m0 = m0
         self.D = D
 
@@ -55,11 +55,11 @@ class OUScore(nn.Module):
 
         t_unique, inv = torch.unique(t, sorted=True, return_inverse=True)
 
-        eBt = torch.matrix_exp((-self.B)[None, :, :] * t_unique[:, None, None])
+        eBt = torch.matrix_exp((-self.net)[None, :, :] * t_unique[:, None, None])
         mt = (eBt @ self.m0[:, None]).squeeze(-1)
 
-        eye = torch.eye(self.Ndim, device=self.B.device, dtype=self.B.dtype)
-        K = torch.kron(eye, self.B) + torch.kron(self.B, eye)
+        eye = torch.eye(self.Ndim, device=self.net.device, dtype=self.net.dtype)
+        K = torch.kron(eye, self.net) + torch.kron(self.net, eye)
         rhs = (2 * self.D).reshape(-1, 1)
         S_inf = torch.linalg.solve(K, rhs).reshape(self.Ndim, self.Ndim)
 

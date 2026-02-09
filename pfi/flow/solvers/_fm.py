@@ -5,6 +5,7 @@ import torch
 from tqdm import tqdm
 
 from ...utils.nns import loss_grad_std
+from ...utils.data import subsample_shuffle
 from ..interpolants import MMOT_trajectories, select_best_lambda, ChebyshevInterpolant
 
 
@@ -63,6 +64,7 @@ def FM_(
     net,
     growth_model=None,
     fac=1,
+    nb=1,
     n_epochs=2000,
     lr=1e-3,
     alpha_ann=0.5,
@@ -87,6 +89,8 @@ def FM_(
         ``(batch_size, 1)``.
     fac : int, default=1
         Temporal upsampling factor for the uniform grid.
+    nb : int, default=1
+        Number of mini-batches used for OT stitching.
     n_epochs : int, default=2000
         Number of optimization epochs.
     lr : float, default=1e-3
@@ -104,8 +108,16 @@ def FM_(
         Trained drift model.
     growth_model : torch.nn.Module or None
         Trained growth model (or ``None`` when disabled).
+    loss_hist : list of float
+        Epoch-wise total objective values.
     """
-    dist_ot, batch_ot_samples = MMOT_trajectories(dist, device=device)
+    
+    dist_tensor = torch.stack(subsample_shuffle(dist), dim=0).to(device)
+    x_mean = dist_tensor.mean(dim=(0, 1)).unsqueeze(0)
+    x_std = dist_tensor.std(dim=(0, 1)).unsqueeze(0)
+    net.set_scales(x_mean, x_std)
+
+    dist_ot, batch_ot_samples = MMOT_trajectories(dist, nb=nb, device=device)
     nsnaps, nsamples, ndim = dist_ot.shape
 
     mass_vec = np.ones((nsnaps,))
@@ -156,6 +168,7 @@ def FM_(
 
     dt = times[1] - times[0]
     lamb = 1.0
+    loss_hist = []
 
     pbar = tqdm(range(n_epochs), desc="FM", dynamic_ncols=True, disable=not verbose)
     for epoch in pbar:
@@ -209,6 +222,7 @@ def FM_(
                     lamb = (1 - alpha_ann) * lamb + alpha_ann * lamb_hat
 
         total_loss = l1 + lamb * l2
+        loss_hist.append(total_loss.item())
 
         total_loss.backward()
         optimizer.step()
@@ -223,7 +237,7 @@ def FM_(
                     f"actual mass={mass_vec}"
                 )
 
-    return drift_net, growth_model
+    return drift_net, growth_model, loss_hist
 
 
 def compute_conditional_distributions(

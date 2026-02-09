@@ -55,8 +55,8 @@ def test_chebyshev_interpolant_matches_ou_flow():
     S0_ = torch.tensor(np.eye(ndim) * S0, dtype=torch.float32)
     D_ = torch.tensor(np.eye(ndim) * D, dtype=torch.float32)
 
-    true_score = OUScore(B=B_, m0=m0_, S0=S0_, D=D_)
-    true_flow = OUFlow(B=B_, score=true_score, D=D_)
+    true_score = OUScore(net=B_, m0=m0_, S0=S0_, D=D_)
+    true_flow = OUFlow(net=B_, score=true_score, D=D_)
 
     dx_flow = (
         true_flow(torch.tensor(X, dtype=torch.float32))

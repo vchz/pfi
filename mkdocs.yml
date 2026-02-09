@@ -7,6 +7,9 @@ theme:
         - navigation.tabs
         - navigation.tabs.sticky
         - toc.integrate
+        - content.action.edit
+  icon:
+    repo: fontawesome/brands/github
 extra_css:
   - style/custom_style.css
 exclude_docs: |

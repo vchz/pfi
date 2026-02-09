@@ -86,3 +86,70 @@ def snapshots_from_X(
         snaps.append(x[t == ti][:, :-1])
 
     return snaps, times
+
+
+def load_data(
+    path,
+    nsamples,
+    genes,
+    time_key,
+    cell_type_key,
+    seed=0,
+):
+    """Load AnnData snapshots and sample a fixed number of cells per time.
+
+    Parameters
+    ----------
+    path : str
+        Path to the ``.h5ad`` dataset.
+    nsamples : int
+        Number of cells sampled at each time point.
+    genes : list of str
+        Selected genes used to build expression snapshots.
+    time_key : str
+        Name of the observation column storing time labels.
+    cell_type_key : str
+        Name of the observation column storing cell-type labels.
+    seed : int, default=0
+        Random seed for snapshot subsampling.
+
+    Returns
+    -------
+    samples : ndarray of shape (n_times, nsamples, n_genes)
+        Subsampled expression snapshots.
+    unique_times : ndarray of shape (n_times,)
+        Unique times present in the dataset.
+    ind_array : ndarray of shape (n_times, nsamples)
+        Encoded cell-type labels for sampled cells.
+    cell_types : pandas.Series
+        Full cell-type annotation column.
+    """
+    n_genes = len(genes)
+    import scanpy as sc
+
+    adata = sc.read_h5ad(path)
+
+    unique_times = np.asarray(adata.obs[time_key].unique())
+    samples = np.zeros((len(unique_times), nsamples, n_genes), dtype=np.float32)
+
+    cell_type_categories = list(adata.obs[cell_type_key].cat.categories)
+    cell_type_to_int = {ct: i for i, ct in enumerate(cell_type_categories)}
+    ind_array = np.zeros((len(unique_times), nsamples), dtype=int)
+    rng = np.random.default_rng(seed)
+
+    for k, time_point in enumerate(unique_times):
+        cells_at_time = adata[adata.obs[time_key] == time_point]
+        expr = cells_at_time[:, genes].X
+        expr = expr.toarray() if hasattr(expr, "toarray") else np.asarray(expr)
+
+        n_cells = expr.shape[0]
+        if n_cells >= nsamples:
+            selected = rng.choice(n_cells, size=nsamples, replace=False)
+        else:
+            selected = rng.choice(n_cells, size=nsamples, replace=True)
+
+        cell_types = cells_at_time.obs[cell_type_key].iloc[selected].values
+        ind_array[k, :] = [cell_type_to_int[ct] for ct in cell_types]
+        samples[k, :, :] = expr[selected, :]
+
+    return samples, unique_times, ind_array, adata.obs[cell_type_key]

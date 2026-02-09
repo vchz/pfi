@@ -48,10 +48,10 @@ def test_fm_chebyshev_recovers_ou_b():
     m0_ = torch.tensor(m0, dtype=torch.float32, device=device)
     S0_ = torch.tensor(np.eye(ndim) * S0, dtype=torch.float32, device=device)
 
-    true_score = OUScore(B=B_, m0=m0_, S0=S0_, D=D_)
+    true_score = OUScore(net=B_, m0=m0_, S0=S0_, D=D_)
 
     flow_model = OUFlow(
-        B=torch.tensor(np.zeros((2, 2)), dtype=torch.float32, device=device, requires_grad=True),
+        net=torch.tensor(np.zeros((2, 2)), dtype=torch.float32, device=device, requires_grad=True),
         score=true_score,
         D=D_,
     )

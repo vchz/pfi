@@ -85,7 +85,7 @@ class FlowRegression:
             self.growth_model_ = self.growth_model_.to(self.device)
 
         if self.solver == "fm":
-            self.model_, self.growth_model_ = FM_(
+            self.model_, self.growth_model_, loss_hist = FM_(
                 dist,
                 times,
                 self.interp,
@@ -94,6 +94,7 @@ class FlowRegression:
                 device=self.device,
                 **self.solver_kwargs,
             )
+            self.loss_ = np.asarray(loss_hist)
         else:
             raise NotImplementedError("Other flow regression solvers (sde, ode, cnf) not implemented")
 

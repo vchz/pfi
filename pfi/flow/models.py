@@ -2,16 +2,17 @@
 
 import torch
 import torch.nn as nn
+from torch.autograd import grad
 
-from ..utils.nns import divergence
+from ..utils.nns import divergence, _CompoundModel
 
 
-class CLEFlow(nn.Module):
+class CLEFlow(_CompoundModel):
     """Chemical-Langevin-inspired flow model.
 
     Parameters
     ----------
-    drift_model : torch.nn.Module
+        net : torch.nn.Module
         Drift network taking ``(batch_size, Ndim)`` inputs.
     score : torch.nn.Module
         Score model taking ``(batch_size, Ndim + 1)`` inputs.
@@ -26,14 +27,13 @@ class CLEFlow(nn.Module):
 
     def __init__(
         self,
-        drift_model,
+        net,
         score,
         Ndim,
         vol=1.0,
         lx=1.0,
     ):
-        super(CLEFlow, self).__init__()
-        self.drift_model = drift_model
+        super(CLEFlow, self).__init__(net)
         self.score = score
         self.Ndim = Ndim
         self.vol = vol
@@ -57,7 +57,7 @@ class CLEFlow(nn.Module):
         """
         xt = Xtrain[:, 0:self.Ndim].clone()
         xt.requires_grad_(True)
-        drift = self.drift_model(xt)
+        drift = self.net(xt)
         div_d = divergence(drift, xt)
         with torch.no_grad():
             score = self.score(Xtrain)
@@ -68,12 +68,12 @@ class CLEFlow(nn.Module):
         )
 
 
-class GradientFlow(nn.Module):
+class GradientFlow(_CompoundModel):
     """Gradient flow model parameterized by a scalar potential.
 
     Parameters
     ----------
-    potential_model : torch.nn.Module
+    net : torch.nn.Module
         Network mapping ``(batch_size, Ndim)`` to scalar potential values.
     Ndim : int
         State dimension.
@@ -82,11 +82,10 @@ class GradientFlow(nn.Module):
 
     def __init__(
         self,
-        potential_model,
+        net,
         Ndim,
     ):
-        super(GradientFlow, self).__init__()
-        self.potential_model = potential_model
+        super(GradientFlow, self).__init__(net)
         self.Ndim = Ndim
 
     def forward(
@@ -107,7 +106,7 @@ class GradientFlow(nn.Module):
         """
         xt = Xtrain[:, 0:self.Ndim].clone()
         xt.requires_grad_(True)
-        phi = self.potential_model(xt)
+        phi = self.net(xt)
         if phi.dim() == 1:
             phi = phi.unsqueeze(-1)
         grad_phi = grad(
@@ -118,12 +117,12 @@ class GradientFlow(nn.Module):
         return -grad_phi
 
 
-class AutonomousFlow(nn.Module):
+class AutonomousFlow(_CompoundModel):
     """Time-independent drift model.
 
     Parameters
     ----------
-    drift_model : torch.nn.Module
+    net : torch.nn.Module
         Drift network acting on state coordinates only.
     Ndim : int
         State dimension.
@@ -132,11 +131,10 @@ class AutonomousFlow(nn.Module):
 
     def __init__(
         self,
-        drift_model,
+        net,
         Ndim,
     ):
-        super(AutonomousFlow, self).__init__()
-        self.drift_model = drift_model
+        super(AutonomousFlow, self).__init__(net)
         self.Ndim = Ndim
 
     def forward(
@@ -155,15 +153,15 @@ class AutonomousFlow(nn.Module):
         drift : torch.Tensor of shape (batch_size, Ndim)
             Drift prediction.
         """
-        return self.drift_model(Xtrain[:, 0:self.Ndim])
+        return self.net(Xtrain[:, 0:self.Ndim])
 
 
-class OUFlow(nn.Module):
+class OUFlow(_CompoundModel):
     """Ornstein-Uhlenbeck flow model using an external score function.
 
     Parameters
     ----------
-    B : torch.Tensor of shape (ndim, ndim)
+    net : torch.Tensor of shape (ndim, ndim)
         Drift matrix.
     score : torch.nn.Module
         Score model mapping ``(batch_size, ndim + 1)`` to ``(batch_size, ndim)``.
@@ -174,14 +172,14 @@ class OUFlow(nn.Module):
 
     def __init__(
         self,
-        B,
+        net,
         score,
         D,
     ):
-        super(OUFlow, self).__init__()
+        super(OUFlow, self).__init__(nn.Parameter(net))
         self.score = score
         self.Ndim = D.shape[0]
-        self.B = nn.Parameter(B)
+        self.B = self.net
         self.D = D
 
     def forward(
@@ -205,5 +203,58 @@ class OUFlow(nn.Module):
         with torch.no_grad():
             score = self.score(Xtrain)
 
-        drift = -torch.einsum("mr,nr->nm", self.B, xt)
+        drift = -torch.einsum("mr,nr->nm", self.net, xt)
         return drift - torch.einsum("mr,nr->nm", self.D, score)
+
+
+class AdditiveFlow(_CompoundModel):
+    """Additive-noise flow model with autonomous drift and score correction."""
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+    ):
+        super(AdditiveFlow, self).__init__(net)
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+
+    def forward(
+        self,
+        Xtrain,
+    ):
+        xt = Xtrain[:, 0:self.Ndim].clone()
+        drift = self.net(xt)
+        with torch.no_grad():
+            score = self.score(Xtrain)
+        return (drift - self.lx * xt) - 0.5 * score
+
+
+class MultiplicativeFlow(_CompoundModel):
+    """Multiplicative-noise flow model with autonomous drift and score correction."""
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+    ):
+        super(MultiplicativeFlow, self).__init__(net)
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+
+    def forward(
+        self,
+        Xtrain,
+    ):
+        xt = Xtrain[:, 0:self.Ndim].clone()
+        drift = self.net(xt)
+        with torch.no_grad():
+            score = self.score(Xtrain)
+        ones = torch.ones_like(xt)
+        return (drift - self.lx * xt) - 0.5 * ones - 0.5 * xt * score

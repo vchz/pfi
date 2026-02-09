@@ -147,6 +147,8 @@ def DSM_(
     -------
     net : torch.nn.Module
         Trained score network.
+    loss_hist : list of float
+        Epoch-wise training loss values.
     """
     dist = torch.stack(subsample_shuffle(dist), dim=0)
 
@@ -187,6 +189,7 @@ def DSM_(
     sigma_tensor = torch.tensor(sigma, dtype=torch.float32, device=x_train.device)
     sigma_reshaped = sigma_tensor.view(L, 1, 1)
     pbar = tqdm(range(n_epochs), desc="DSM", dynamic_ncols=True, disable=not verbose)
+    loss_hist = []
 
     for epoch in pbar:
         for _, (xbatch, ybatch) in enumerate(loader):
@@ -232,12 +235,13 @@ def DSM_(
             optimizer.step()
 
         scheduler.step()
+        loss_hist.append(loss.item())
         if verbose:
             pbar.set_postfix(loss=f"{loss.item():.3e}", lr=f"{optimizer.param_groups[0]['lr']:.2e}")
             if epoch % 500 == 0:
                 tqdm.write(f"epoch: {epoch} c_: {c_.detach().cpu().numpy()}")
 
-    return net
+    return net, loss_hist
 
 
 def generate_data_DSM(

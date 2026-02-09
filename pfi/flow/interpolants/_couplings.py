@@ -117,6 +117,7 @@ def get_sample_paths(
 
 def MMOT_trajectories(
     dist,
+    nb=1,
     device="cpu",
 ):
     """Construct multi-marginal OT trajectories from snapshot lists.
@@ -125,6 +126,8 @@ def MMOT_trajectories(
     ----------
     dist : list of array-like, length nsnaps
         ``dist[k]`` has shape ``(n_k, ndim)``.
+    nb : int, default=1
+        Number of mini-batches used for OT stitching.
     device : str or torch.device, default='cpu'
         Target device for returned trajectories.
 
@@ -137,9 +140,18 @@ def MMOT_trajectories(
     """
     dist = torch.stack(subsample_shuffle(dist), dim=0)
     nsamples = dist.shape[1]
+    batch_ot_samples = torch.zeros_like(dist)
 
-    pi_list = compute_pairwise_ot_plans(dist, method="exact")
-    trajectories = sample_trajectory(pi_list, num_samples=nsamples)
-    batch_ot_samples = get_sample_paths(dist, trajectories, nsamples).to(device)
+    # Note that we might loose some data points here (the remainder)
+    bs = int(nsamples / nb)
+    ind = np.arange(nsamples)
+    for k in range(nb):
+        np.random.shuffle(ind)
+        chunk = ind[:bs]
+        chunk_dist = dist[:, chunk, :]
+        pi_list = compute_pairwise_ot_plans(chunk_dist, method="exact")
+        trajectories = sample_trajectory(pi_list, num_samples=len(chunk))
+        chunk_paths = get_sample_paths(chunk_dist, trajectories, len(chunk))
+        batch_ot_samples[:, k * bs:(k + 1) * bs, :] = chunk_paths
 
-    return dist, batch_ot_samples
+    return dist, batch_ot_samples.to(device)
