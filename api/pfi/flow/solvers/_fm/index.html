@@ -1378,7 +1378,7 @@
 
 
 <h3 id="pfi.flow.solvers._fm.FM_" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">FM_</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">times</span><span class="p">,</span> <span class="n">interp</span><span class="p">,</span> <span class="n">net</span><span class="p">,</span> <span class="n">growth_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fac</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_epochs</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">alpha_ann</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">FM_</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">times</span><span class="p">,</span> <span class="n">interp</span><span class="p">,</span> <span class="n">net</span><span class="p">,</span> <span class="n">growth_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fac</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">nb</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_epochs</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">alpha_ann</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
 </h3>
 
@@ -1442,6 +1442,16 @@
           –
           <div class="doc-md-description">
             <p>Temporal upsampling factor for the uniform grid.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>nb</code></b>
+              (<code><span title="int">int</span></code>, default:
+                  <code>1</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Number of mini-batches used for OT stitching.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
@@ -1511,6 +1521,13 @@
 )          –
           <div class="doc-md-description">
             <p>Trained growth model (or <code>None</code> when disabled).</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+<b><code>loss_hist</code></b> (              <code>list of float</code>
+)          –
+          <div class="doc-md-description">
+            <p>Epoch-wise total objective values.</p>
           </div>
         </li>
     </ul>
@@ -1752,7 +1769,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate"], "search": "../../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "toc.integrate", "content.action.edit"], "search": "../../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../../../../../assets/javascripts/bundle.79ae519e.min.js"></script>
