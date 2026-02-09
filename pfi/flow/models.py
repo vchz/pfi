@@ -12,7 +12,7 @@ class CLEFlow(_CompoundModel):
 
     Parameters
     ----------
-        net : torch.nn.Module
+    net : torch.nn.Module
         Drift network taking ``(batch_size, Ndim)`` inputs.
     score : torch.nn.Module
         Score model taking ``(batch_size, Ndim + 1)`` inputs.
