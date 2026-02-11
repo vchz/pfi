@@ -7,21 +7,63 @@ import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
 
-class _CompoundModel(nn.Module):
-    """Common container model with optional scale propagation to `net`."""
+class CompoundModel(nn.Module):
+    """Common duck-typed container for models holding a `net`.
+
+    Parameters
+    ----------
+    net : torch.nn.Module
+        Wrapped module implementing a callable forward pass.
+    """
 
     def __init__(
         self,
         net,
     ):
-        super(_CompoundModel, self).__init__()
+        super(CompoundModel, self).__init__()
         self.net = net
+
+    def forward(
+        self,
+        x,
+        stoch=False,
+    ):
+        """Forward to the wrapped network.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor passed to ``net``.
+        stoch : bool, default=False
+            Optional flag accepted for API consistency with flow models.
+            This base implementation ignores it.
+
+        Returns
+        -------
+        y : torch.Tensor
+            Output of ``net(x)``.
+        """
+        return self.net(x)
 
     def set_scales(
         self,
         mean,
         std,
     ):
+        """Propagate feature scales when the wrapped net supports it.
+
+        Parameters
+        ----------
+        mean : torch.Tensor
+            Feature-wise mean.
+        std : torch.Tensor
+            Feature-wise standard deviation.
+
+        Returns
+        -------
+        self : CompoundModel
+            Model instance.
+        """
         if hasattr(self.net, "set_scales"):
             self.net.set_scales(mean, std)
         return self
@@ -405,6 +447,7 @@ def loss_grad_std(
 def divergence(
     field,
     x,
+    create_graph=True,
 ):
     """Compute coordinate-wise divergence terms of a vector field.
 
@@ -414,6 +457,9 @@ def divergence(
         Vector field evaluated at ``x``.
     x : torch.Tensor of shape (batch_size, ndim)
         Input points with gradient tracking enabled.
+    create_graph : bool, default=True
+        If ``True``, keep higher-order graph information. Set to ``False``
+        for inference-only divergence computation.
 
     Returns
     -------
@@ -428,10 +474,24 @@ def divergence(
             outputs=out_,
             inputs=x,
             grad_outputs=torch.ones_like(out_),
-            create_graph=True,
+            create_graph=create_graph,
+            retain_graph=True,
         )[0]
         div[:, i] = gradient[:, i]
     return div
+
+
+def symsqrt(matrix):
+    """Compute the square root of a positive definite matrix."""
+    # perform the decomposition
+    # s, v = matrix.symeig(eigenvectors=True)
+    _, s, v = matrix.svd()  # passes torch.autograd.gradcheck()
+    # truncate small components
+    above_cutoff = s > s.max() * s.size(-1) * torch.finfo(s.dtype).eps
+    s = s[..., above_cutoff]
+    v = v[..., above_cutoff]
+    # compose the square root matrix
+    return (v * s.sqrt().unsqueeze(-2)) @ v.transpose(-2, -1)
 
 
 class FreezeVarDNN(nn.Module):
@@ -450,12 +510,12 @@ class FreezeVarDNN(nn.Module):
 
     def __init__(
         self,
-        dnn,
+        net,
         var_index,
         var_value,
     ):
         super(FreezeVarDNN, self).__init__()
-        self.dnn = dnn
+        self.net = net
         self.var_index = var_index
         self.var_value = var_value
 
@@ -484,4 +544,4 @@ class FreezeVarDNN(nn.Module):
             device=x.device,
         )
         x_frozen = torch.cat((left, frozen, right), dim=1)
-        return self.dnn(x_frozen)
+        return self.net(x_frozen)

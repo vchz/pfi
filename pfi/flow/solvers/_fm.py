@@ -68,6 +68,7 @@ def FM_(
     n_epochs=2000,
     lr=1e-3,
     alpha_ann=0.5,
+    scheduler_kwargs=None,
     device="cpu",
     verbose=True,
 ):
@@ -97,6 +98,10 @@ def FM_(
         Learning rate.
     alpha_ann : float, default=0.5
         Exponential averaging factor for adaptive mass-loss weight.
+    scheduler_kwargs : dict or None, default=None
+        Keyword arguments used to configure
+        ``torch.optim.lr_scheduler.MultiStepLR``.
+        Defaults to ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
     device : str or torch.device, default='cpu'
         Training device.
     verbose : bool, default=True
@@ -164,7 +169,10 @@ def FM_(
         params.append({"params": growth_model.parameters(), "lr": lr})
 
     optimizer = torch.optim.Adam(params)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [1000, 1500, 8000, 15000], gamma=0.1)
+    scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
+    default_sched = {"milestones": [1000, 1500, 8000, 15000], "gamma": 0.1}
+    default_sched.update(scheduler_kwargs)
+    scheduler_ = torch.optim.lr_scheduler.MultiStepLR(optimizer, **default_sched)
 
     dt = times[1] - times[0]
     lamb = 1.0
@@ -226,7 +234,7 @@ def FM_(
 
         total_loss.backward()
         optimizer.step()
-        scheduler.step()
+        scheduler_.step()
 
         if verbose:
             pbar.set_postfix(loss=f"{total_loss.item():.3e}", lr=f"{optimizer.param_groups[0]['lr']:.2e}")

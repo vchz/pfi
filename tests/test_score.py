@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 
 from pfi.score import ScoreMatching
-from pfi.utils import DNN, X_from_snapshots, simulate_ornstein_uhlenbeck
+from pfi.utils.nns import DNN
+from pfi.utils.data import X_from_snapshots
+from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 
 def test_dsm_score_energy_distance():

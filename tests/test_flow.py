@@ -5,8 +5,8 @@ from pfi.flow import FlowRegression
 from pfi.flow.interpolants import ChebyshevInterpolant
 from pfi.flow.models import OUFlow
 from pfi.score.models import OUScore
-from pfi.utils import X_from_snapshots, simulate_ornstein_uhlenbeck
-
+from pfi.utils.data import X_from_snapshots
+from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 def test_fm_chebyshev_recovers_ou_b():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

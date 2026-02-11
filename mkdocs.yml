@@ -10,10 +10,9 @@ theme:
         - navigation.tabs.sticky
         - toc.integrate
         - content.action.edit
-        - content.action.view
   icon:
     repo: fontawesome/brands/github
-edit_uri: edit/main/docs/
+edit_uri: blob/main/docs/
 extra_css:
   - style/custom_style.css
 exclude_docs: |

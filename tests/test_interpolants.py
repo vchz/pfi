@@ -1,10 +1,12 @@
 import numpy as np
 import torch
 
-from pfi.flow.interpolants import ChebyshevInterpolant, MMOT_trajectories
+from pfi.flow.interpolants import (ChebyshevInterpolant, 
+                                   MMOT_trajectories)
 from pfi.flow.models import OUFlow
 from pfi.score.models import OUScore
-from pfi.utils import X_from_snapshots, simulate_ornstein_uhlenbeck
+from pfi.utils.data import X_from_snapshots
+from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 
 def test_chebyshev_interpolant_matches_ou_flow():

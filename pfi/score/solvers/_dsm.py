@@ -114,6 +114,7 @@ def DSM_(
     bs=None,
     adp_flag=0,
     lr=1e-4,
+    scheduler_kwargs=None,
     device="cpu",
     verbose=True,
 ):
@@ -138,6 +139,10 @@ def DSM_(
         If set to ``1``, enable adaptive per-time weighting.
     lr : float, default=1e-4
         Learning rate.
+    scheduler_kwargs : dict or None, default=None
+        Keyword arguments used to configure
+        ``torch.optim.lr_scheduler.MultiStepLR``.
+        Defaults to ``milestones=[2500, 6500, 8500], gamma=0.1``.
     device : str or torch.device, default='cpu'
         Training device.
     verbose : bool, default=True
@@ -179,7 +184,10 @@ def DSM_(
     )
 
     optimizer = torch.optim.Adam(list(net.parameters()), lr=lr)
-    scheduler = MultiStepLR(optimizer, milestones=[2500, 6500, 8500], gamma=0.1)
+    scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
+    default_sched = {"milestones": [2500, 6500, 8500], "gamma": 0.1}
+    default_sched.update(scheduler_kwargs)
+    scheduler = MultiStepLR(optimizer, **default_sched)
 
     c_ = torch.ones((nsnaps,), dtype=torch.float32, device=device)
     alpha_ann = 0.5

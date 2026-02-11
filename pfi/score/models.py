@@ -3,9 +3,9 @@
 import torch
 import torch.nn as nn
 
-from ..utils.nns import _CompoundModel
+from ..utils.nns import CompoundModel
 
-class OUScore(_CompoundModel):
+class OUScore(CompoundModel):
     """Analytical score function for Gaussian Ornstein-Uhlenbeck dynamics.
 
     Parameters

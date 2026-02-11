@@ -19,6 +19,8 @@ class ScoreMatching:
         Solver backend.
     solver_kwargs : dict, default=None
         Extra keyword arguments passed to the selected solver.
+        For ``solver='dsm'``, this can include ``scheduler_kwargs`` to
+        configure the internal ``MultiStepLR``.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
 
@@ -80,7 +82,7 @@ class ScoreMatching:
             )
             self.loss_ = np.asarray(loss_hist)
             self.model_ = FreezeVarDNN(
-                dnn=self.model,
+                net=self.model,
                 var_index=self.Ndim_,
                 var_value=0.01,
             )
@@ -109,7 +111,8 @@ class ScoreMatching:
             Predicted score vectors.
         """
         X = torch.tensor(X, dtype=torch.float32, device=self.device)
-        score = self.model_(X)
+        with torch.no_grad():
+            score = self.model_(X)
 
         return score.detach().cpu().numpy()
 
@@ -193,14 +196,15 @@ class ScoreMatching:
         scores = []
 
         loss = geomloss.SamplesLoss("energy")
-        for t in times:
-            x_t = X[X[:, -1] == t]
-            gen = self.sample(x_t, nsamples=x_t.shape[0], maxiter=maxiter)
-            y_t = x_t[:, : self.Ndim_]
-            ed = loss(
-                torch.tensor(gen, dtype=torch.float32, device=self.device),
-                torch.tensor(y_t, dtype=torch.float32, device=self.device),
-            ).item()
-            scores.append(ed)
+        with torch.no_grad():
+            for t in times:
+                x_t = X[X[:, -1] == t]
+                gen = self.sample(x_t, nsamples=x_t.shape[0], maxiter=maxiter)
+                y_t = x_t[:, : self.Ndim_]
+                ed = loss(
+                    torch.tensor(gen, dtype=torch.float32, device=self.device),
+                    torch.tensor(y_t, dtype=torch.float32, device=self.device),
+                ).item()
+                scores.append(ed)
 
         return np.asarray(scores)

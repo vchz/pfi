@@ -18,12 +18,12 @@ class FlowRegression:
         Drift model consuming inputs of shape ``(batch_size, ndim + 1)``.
     growth_model : torch.nn.Module or None, default=None
         Optional growth model used for unbalanced transport.
-    dt : float, default=1.0
-        Time step used by `predict` when advancing one step.
     solver : {'fm'}, default='fm'
         Solver backend.
     solver_kwargs : dict, default=None
         Extra keyword arguments passed to the selected solver.
+        For ``solver='fm'``, this can include ``scheduler_kwargs`` to
+        configure the internal ``MultiStepLR``.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
 
@@ -44,7 +44,6 @@ class FlowRegression:
         interp,
         model,
         growth_model=None,
-        dt=1.0,
         solver="fm",
         solver_kwargs=None,
         device="cpu",
@@ -52,7 +51,6 @@ class FlowRegression:
         self.model = model
         self.interp = interp
         self.growth_model = growth_model
-        self.dt = dt
         self.solver = solver
         self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
         self.device = device
@@ -99,13 +97,14 @@ class FlowRegression:
             raise NotImplementedError("Other flow regression solvers (sde, ode, cnf) not implemented")
 
         self.times_ = np.unique(X[:, -1])
+        self.model_ = self.model_.eval()
         return self
 
     def predict(
         self,
         X,
     ):
-        """Predict next-state positions by Euler stepping the learned drift.
+        """Predict flow vectors for input states.
 
         Parameters
         ----------
@@ -114,52 +113,99 @@ class FlowRegression:
 
         Returns
         -------
-        x_next : ndarray of shape (n_samples, ndim)
-            One-step predictions ``x + dt * f(x, t)``.
+        drift : ndarray of shape (n_samples, ndim)
+            Predicted flow vectors ``f(x, t)``.
         """
         X = torch.tensor(X, dtype=torch.float32, device=self.device)
-        x = X[:, : self.Ndim_]
-        t = X[:, -1:]
-        inp = torch.cat([x, t], dim=1)
-        drift = self.model_(inp)
-        x_next = x + self.dt * drift
-        return x_next.detach().cpu().numpy()
+        with torch.no_grad():
+            drift = self.model_(X)
+        return drift.detach().cpu().numpy()
+
+    def sample(
+        self,
+        X,
+        Dt,
+        dt=0.01,
+        stoch=False,
+    ):
+        """Simulate trajectories from initial states over a duration ``Dt``.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, ndim + 1)
+            Initial states with time in the last column.
+        Dt : float
+            Simulation duration.
+        dt : float, default=0.01
+            Euler integration step.
+        stoch : bool, default=False
+            If ``True``, use stochastic simulation with model-provided
+            noise terms. If ``False``, use deterministic Euler flow.
+
+        Returns
+        -------
+        x_final : ndarray of shape (n_samples, ndim)
+            Simulated states after duration ``Dt``.
+        """
+        X = torch.tensor(X, dtype=torch.float32, device=self.device)
+        x = X[:, : self.Ndim_].clone()
+        t = X[:, -1].clone()
+
+        n_steps = int(Dt / dt)
+        sqrt_dt = np.sqrt(dt)
+
+        with torch.no_grad():
+            for _ in range(n_steps):
+                inp = torch.cat([x, t[:, None]], dim=1)
+                if stoch:
+                    drift, noise = self.model_(inp, stoch=True)
+                    x = x + drift * dt + noise * sqrt_dt
+                else:
+                    drift = self.model_(inp, stoch=False)
+                    x = x + drift * dt
+                t = t + dt
+
+        return x.detach().cpu().numpy()
 
     def score(
         self,
         X,
         y,
+        stoch=False,
+        dt=0.01,
     ):
-        """Compute per-time energy distance between predictions and targets.
+        """Compute per-time energy distance between simulated and target data.
 
         Parameters
         ----------
         X : ndarray of shape (n_samples, ndim + 1)
-            Inputs used for prediction.
-        y : ndarray of shape (n_targets, ndim) or (n_targets, ndim + 1)
-            Targets. If time is present, rows at ``t + dt`` are selected.
+            Source samples with time in the last column.
+        y : ndarray of shape (n_targets, ndim + 1)
+            Target samples with time in the last column.
+        stoch : bool, default=False
+            If ``True``, use stochastic simulation in ``sample``.
 
         Returns
         -------
-        scores : ndarray of shape (n_times,)
-            Energy distance for each unique input time.
+        scores : ndarray of shape (n_pairs,)
+            Energy distance for each paired source/target time.
         """
         import geomloss
 
         X = np.asarray(X)
         y = np.asarray(y)
-        times = np.unique(X[:, -1])
+        x_times = np.sort(np.unique(X[:, -1]))
+        y_times = np.sort(np.unique(y[:, -1]))
+        npairs = min(len(x_times), len(y_times))
         scores = []
 
         loss = geomloss.SamplesLoss("energy")
-        for t in times:
-            x_t = X[X[:, -1] == t]
-            pred = self.predict(x_t)
-            if y.shape[1] == self.Ndim_ + 1:
-                y_t = y[np.isclose(y[:, -1], t + self.dt)]
-                y_t = y_t[:, : self.Ndim_]
-            else:
-                y_t = y
+        for i in range(npairs):
+            tx = x_times[i]
+            ty = y_times[i]
+            x_t = X[np.isclose(X[:, -1], tx)]
+            y_t = y[np.isclose(y[:, -1], ty)][:, : self.Ndim_]
+            pred = self.sample(x_t, Dt=(ty - tx), stoch=stoch, dt=dt)
             ed = loss(
                 torch.tensor(pred, dtype=torch.float32, device=self.device),
                 torch.tensor(y_t, dtype=torch.float32, device=self.device),

@@ -4,10 +4,12 @@ import torch
 import torch.nn as nn
 from torch.autograd import grad
 
-from ..utils.nns import divergence, _CompoundModel
+from ..utils.nns import divergence, CompoundModel, symsqrt
 
 
-class CLEFlow(_CompoundModel):
+
+
+class CLEFlow(CompoundModel):
     """Chemical-Langevin-inspired flow model.
 
     Parameters
@@ -42,6 +44,7 @@ class CLEFlow(_CompoundModel):
     def forward(
         self,
         Xtrain,
+        stoch=False,
     ):
         """Evaluate CLE drift correction terms.
 
@@ -49,16 +52,27 @@ class CLEFlow(_CompoundModel):
         ----------
         Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
             Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part
+            ``drift - lx * x``. If ``False``, return the probability flow
+            drift
 
         Returns
         -------
         drift : torch.Tensor of shape (batch_size, Ndim)
-            Corrected drift.
+            Corrected drift (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled noise term.
         """
-        xt = Xtrain[:, 0:self.Ndim].clone()
-        xt.requires_grad_(True)
-        drift = self.net(xt)
-        div_d = divergence(drift, xt)
+        with torch.enable_grad():
+            xt = Xtrain[:, 0:self.Ndim].clone()
+            xt.requires_grad_(True)
+            drift = self.net(xt)
+            if stoch:
+                drift_part = drift - self.lx * Xtrain[:, 0:self.Ndim]
+                noise = torch.sqrt(torch.relu(drift + self.lx * Xtrain[:, 0:self.Ndim])) * torch.randn_like(xt)
+                return drift_part, noise
+            div_d = divergence(drift, xt, create_graph=self.training)
         with torch.no_grad():
             score = self.score(Xtrain)
         return (
@@ -66,97 +80,9 @@ class CLEFlow(_CompoundModel):
             - (0.5 / self.vol) * (div_d + self.lx)
             - (0.5 / self.vol) * (drift + self.lx * Xtrain[:, 0:self.Ndim]) * score
         )
+    
 
-
-class GradientFlow(_CompoundModel):
-    """Gradient flow model parameterized by a scalar potential.
-
-    Parameters
-    ----------
-    net : torch.nn.Module
-        Network mapping ``(batch_size, Ndim)`` to scalar potential values.
-    Ndim : int
-        State dimension.
-
-    """
-
-    def __init__(
-        self,
-        net,
-        Ndim,
-    ):
-        super(GradientFlow, self).__init__(net)
-        self.Ndim = Ndim
-
-    def forward(
-        self,
-        Xtrain,
-    ):
-        """Evaluate negative gradient of potential.
-
-        Parameters
-        ----------
-        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
-            Input states with time in the last column.
-
-        Returns
-        -------
-        drift : torch.Tensor of shape (batch_size, Ndim)
-            Negative potential gradient.
-        """
-        xt = Xtrain[:, 0:self.Ndim].clone()
-        xt.requires_grad_(True)
-        phi = self.net(xt)
-        if phi.dim() == 1:
-            phi = phi.unsqueeze(-1)
-        grad_phi = grad(
-            outputs=phi.sum(),
-            inputs=xt,
-            create_graph=True,
-        )[0]
-        return -grad_phi
-
-
-class AutonomousFlow(_CompoundModel):
-    """Time-independent drift model.
-
-    Parameters
-    ----------
-    net : torch.nn.Module
-        Drift network acting on state coordinates only.
-    Ndim : int
-        State dimension.
-
-    """
-
-    def __init__(
-        self,
-        net,
-        Ndim,
-    ):
-        super(AutonomousFlow, self).__init__(net)
-        self.Ndim = Ndim
-
-    def forward(
-        self,
-        Xtrain,
-    ):
-        """Evaluate autonomous drift.
-
-        Parameters
-        ----------
-        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
-            Input states with time in the last column.
-
-        Returns
-        -------
-        drift : torch.Tensor of shape (batch_size, Ndim)
-            Drift prediction.
-        """
-        return self.net(Xtrain[:, 0:self.Ndim])
-
-
-class OUFlow(_CompoundModel):
+class OUFlow(CompoundModel):
     """Ornstein-Uhlenbeck flow model using an external score function.
 
     Parameters
@@ -185,6 +111,7 @@ class OUFlow(_CompoundModel):
     def forward(
         self,
         Xtrain,
+        stoch=False,
     ):
         """Evaluate OU flow field.
 
@@ -192,23 +119,31 @@ class OUFlow(_CompoundModel):
         ----------
         Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
             Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``-B x``.
+            If ``False``, return the probability flow drift
+            ``-B x - D score``.
 
         Returns
         -------
         drift : torch.Tensor of shape (batch_size, Ndim)
-            OU drift corrected by score and diffusion.
+            OU drift corrected by score and diffusion (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled noise term.
         """
         xt = Xtrain[:, 0:self.Ndim].clone()
         xt.requires_grad_(True)
+        drift = -torch.einsum("mr,nr->nm", self.net, xt)
+        if stoch:
+            noise = torch.einsum("mr,nr->nm", self.D, torch.randn_like(xt))
+            return drift, noise
         with torch.no_grad():
             score = self.score(Xtrain)
 
-        drift = -torch.einsum("mr,nr->nm", self.net, xt)
         return drift - torch.einsum("mr,nr->nm", self.D, score)
 
-
-class AdditiveFlow(_CompoundModel):
-    """Additive-noise flow model with autonomous drift and score correction."""
+class AutonomousODEFlow(CompoundModel):
+    """Istropic aditive-noise flow model with autonomous drift and score correction."""
 
     def __init__(
         self,
@@ -216,24 +151,154 @@ class AdditiveFlow(_CompoundModel):
         score,
         Ndim,
         lx=1.0,
+        D=1.0,
+    ):
+        super(AutonomousODEFlow, self).__init__(net)
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+        self.D = D
+
+    def forward(
+        self,
+        Xtrain,
+        stoch=False,
+    ):
+        """Evaluate additive model drift.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return the probability flow drift with score term.
+
+        Returns
+        -------
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Additive-model drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled additive noise term.
+        """
+        xt = Xtrain[:, 0:self.Ndim].clone()
+        drift = self.net(xt)
+
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = 0
+            return drift_part, noise
+        
+            
+        return (drift - self.lx * xt)
+
+
+class ODEFlow(CompoundModel):
+    """Istropic aditive-noise flow model with autonomous drift and score correction."""
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+        D=1.0,
+    ):
+        super(ODEFlow, self).__init__(net)
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+        self.D = D
+
+    def forward(
+        self,
+        Xtrain,
+        stoch=False,
+    ):
+        """Evaluate additive model drift.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return the probability flow drift with score term.
+
+        Returns
+        -------
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Additive-model drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled additive noise term.
+        """
+        xt = Xtrain[:, :].clone()
+        drift = self.net(Xtrain)
+
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = 0
+            return drift_part, noise
+        
+        return (drift - self.lx * xt)
+    
+    
+class AdditiveFlow(CompoundModel):
+    """Istropic aditive-noise flow model with autonomous drift and score correction."""
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+        D=1.0,
     ):
         super(AdditiveFlow, self).__init__(net)
         self.score = score
         self.Ndim = Ndim
         self.lx = lx
+        self.D = D
 
     def forward(
         self,
         Xtrain,
+        stoch=False,
     ):
+        """Evaluate additive model drift.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return the probability flow drift with score term.
+
+        Returns
+        -------
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Additive-model drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled additive noise term.
+        """
         xt = Xtrain[:, 0:self.Ndim].clone()
         drift = self.net(xt)
+
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = torch.einsum("mr,nr->nm", symsqrt(2.0*self.D), torch.randn_like(xt))
+            return drift_part, noise
+        
         with torch.no_grad():
             score = self.score(Xtrain)
-        return (drift - self.lx * xt) - 0.5 * score
+            
+        return (drift - self.lx * xt) - torch.einsum(
+            "mr,nr->nm", self.D, score
+        )
 
 
-class MultiplicativeFlow(_CompoundModel):
+class MultiplicativeFlow(CompoundModel):
     """Multiplicative-noise flow model with autonomous drift and score correction."""
 
     def __init__(
@@ -251,10 +316,35 @@ class MultiplicativeFlow(_CompoundModel):
     def forward(
         self,
         Xtrain,
+        stoch=False,
     ):
+        """Evaluate multiplicative model drift.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return the probability flow drift with score term.
+
+        Returns
+        -------
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Multiplicative-model drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled multiplicative
+            noise term.
+        """
         xt = Xtrain[:, 0:self.Ndim].clone()
         drift = self.net(xt)
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = torch.sqrt(torch.relu(xt)) * torch.randn_like(xt)
+            return drift_part, noise
+        
         with torch.no_grad():
             score = self.score(Xtrain)
+
         ones = torch.ones_like(xt)
         return (drift - self.lx * xt) - 0.5 * ones - 0.5 * xt * score

@@ -40,7 +40,7 @@ def compute_pairwise_ot_plans(
         if method == "sinkhorn":
             pi = ot.sinkhorn(uniform_weights, uniform_weights, c, reg=epsilon)
         elif method == "exact":
-            pi = ot.emd(uniform_weights, uniform_weights, c)
+            pi = ot.emd(uniform_weights, uniform_weights, c, numItermax=500000)
         else:
             raise ValueError("Unknown OT method")
 
