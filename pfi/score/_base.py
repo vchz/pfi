@@ -3,12 +3,11 @@
 import numpy as np
 import torch
 
-from .solvers._dsm import DSM_, generate_data_DSM
-from ..utils.nns import FreezeVarDNN
+from ._dsm import DSM_, generate_data_DSM
 from ..utils.data import snapshots_from_X
 
 
-class ScoreMatching:
+class ScoreModel:
     """Estimate score functions from snapshot data.
 
     Parameters
@@ -21,6 +20,8 @@ class ScoreMatching:
         Extra keyword arguments passed to the selected solver.
         For ``solver='dsm'``, this can include ``scheduler_kwargs`` to
         configure the internal ``MultiStepLR``.
+    noise_lvl : float, default=0
+        Noise level used at inference/sampling time for DSM.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
 
@@ -32,7 +33,12 @@ class ScoreMatching:
         Sorted unique training times, set during `fit`.
     model_ : torch.nn.Module
         Fitted score model used at inference time, set during `fit`.
-        The input of this fitted model is (x,t), dimension ndim + 1.
+        The input of this fitted model is ``(x, sigma, t)``,
+        dimension ``ndim + 2``.
+    min_noise_ : float
+        Minimum noise level used by the fitted DSM model.
+    noise_lvl_ : float
+        Effective inference/sampling noise level used by the fitted model.
     """
 
     def __init__(
@@ -40,11 +46,29 @@ class ScoreMatching:
         model,
         solver="dsm",
         solver_kwargs=None,
+        noise_lvl=0,
         device="cpu",
     ):
+        """Initialize the score estimator wrapper.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            Score network.
+        solver : {'dsm'}, default='dsm'
+            Score solver.
+        solver_kwargs : dict or None, default=None
+            Solver configuration.
+        noise_lvl : float, default=0
+            Noise level used at inference/sampling time for DSM.
+            This parameter is only used when ``solver='dsm'``.
+        device : str or torch.device, default='cpu'
+            Device used for fit and inference.
+        """
         self.model = model
         self.solver = solver
         self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
+        self.noise_lvl = noise_lvl
         self.device = device
 
     def fit(
@@ -63,7 +87,7 @@ class ScoreMatching:
 
         Returns
         -------
-        self : ScoreMatching
+        self : ScoreModel
             Fitted estimator.
         """
         dist, times = snapshots_from_X(X)
@@ -73,7 +97,7 @@ class ScoreMatching:
         self.times_ = np.unique(X[:, -1])
 
         if self.solver == "dsm":
-            self.model, loss_hist = DSM_(
+            self.model_, loss_hist, min_noise = DSM_(
                 dist,
                 times,
                 self.model,
@@ -81,12 +105,8 @@ class ScoreMatching:
                 **self.solver_kwargs,
             )
             self.loss_ = np.asarray(loss_hist)
-            self.model_ = FreezeVarDNN(
-                net=self.model,
-                var_index=self.Ndim_,
-                var_value=0.01,
-            )
-            self.model.eval()
+            self.min_noise_ = min_noise
+            self.noise_lvl_ = max(self.min_noise_, self.noise_lvl)
         else:
             raise NotImplementedError("Other score matching solvers not implemented yet.")
 
@@ -102,17 +122,18 @@ class ScoreMatching:
         Parameters
         ----------
         X : array-like of shape (n_samples, ndim + 1)
-            Inputs containing state and time columns. The internal noise-level
-            feature is inserted by `model_`.
-
+            Inputs containing state and time columns.
         Returns
         -------
         score : ndarray of shape (n_samples, ndim)
             Predicted score vectors.
         """
         X = torch.tensor(X, dtype=torch.float32, device=self.device)
+        sigma_value = self.noise_lvl_
+        sigma_col = torch.full((X.shape[0], 1), sigma_value, dtype=torch.float32, device=self.device)
+        X_in = torch.cat([X[:, : self.Ndim_], sigma_col, X[:, -1:]], dim=1)
         with torch.no_grad():
-            score = self.model_(X)
+            score = self.model_(X_in)
 
         return score.detach().cpu().numpy()
 
@@ -132,11 +153,10 @@ class ScoreMatching:
             Number of generated samples. If ``None``, uses ``X.shape[0]``.
         maxiter : int, default=100
             Number of Langevin updates per noise level.
-
         Returns
         -------
-        gen : ndarray of shape (nsamples, ndim)
-            Generated samples.
+        gen : ndarray of shape (nsamples, ndim + 1)
+            Generated samples with time in the last column.
         """
         X = torch.tensor(X, 
                          dtype=torch.float32, 
@@ -149,9 +169,10 @@ class ScoreMatching:
 
             init_ = 4*torch.rand((nsamples,self.Ndim_+2)) + 1
             init_[:,0:self.Ndim_] = X[:,0:self.Ndim_]
-            time_ = X[0, -1]
+            time_ = X[:, -1]
+            target_noise = self.noise_lvl_
             with torch.no_grad():
-                gen, _ = generate_data_DSM(
+                gen = generate_data_DSM(
                     maxiter=maxiter,
                     infNet=self.model,
                     nsamples=nsamples,
@@ -160,8 +181,13 @@ class ScoreMatching:
                     L=self.solver_kwargs["L"],
                     ndim=self.Ndim_,
                     device=self.device,
+                    noise_lvl=target_noise,
                 )
-            return gen[:, : self.Ndim_]
+            gen_xt = torch.cat(
+                [gen[:, : self.Ndim_], gen[:, self.Ndim_ + 1 : self.Ndim_ + 2]],
+                dim=1,
+            )
+            return gen_xt.detach().cpu().numpy()
 
         raise NotImplementedError("Langevin sampling not implemented yet.")
 
@@ -181,7 +207,6 @@ class ScoreMatching:
             Ignored. Present for estimator API compatibility.
         maxiter : int, default=100
             Number of Langevin updates used during sampling.
-
         Returns
         -------
         scores : ndarray of shape (n_times,)
@@ -199,10 +224,14 @@ class ScoreMatching:
         with torch.no_grad():
             for t in times:
                 x_t = X[X[:, -1] == t]
-                gen = self.sample(x_t, nsamples=x_t.shape[0], maxiter=maxiter)
+                gen = self.sample(
+                    x_t,
+                    nsamples=x_t.shape[0],
+                    maxiter=maxiter,
+                )
                 y_t = x_t[:, : self.Ndim_]
                 ed = loss(
-                    torch.tensor(gen, dtype=torch.float32, device=self.device),
+                    torch.tensor(gen[:, : self.Ndim_], dtype=torch.float32, device=self.device),
                     torch.tensor(y_t, dtype=torch.float32, device=self.device),
                 ).item()
                 scores.append(ed)

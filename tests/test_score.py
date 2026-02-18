@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pfi.score import ScoreMatching
+from pfi.score import ScoreModel
 from pfi.utils.nns import DNN
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
@@ -44,7 +44,7 @@ def test_dsm_score_energy_distance():
     Np = 50
     score_model = DNN([ndim + 2, Np, Np, Np, Np, Np, ndim], activation=nn.ELU()).to(device)
 
-    score_reg = ScoreMatching(
+    score_reg = ScoreModel(
         model=score_model,
         solver="dsm",
         solver_kwargs=dict(L=10, 

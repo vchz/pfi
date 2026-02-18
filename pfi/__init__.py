@@ -5,6 +5,7 @@ and utility helpers.
 """
 
 import importlib as _importlib
+from ._pfi import PFI, hyperopt_pfi
 
 __version__ = '0.1'
 
@@ -14,7 +15,7 @@ _submodules = [
     'utils',
 ]
 
-__all__ = _submodules + []
+__all__ = _submodules + ['PFI', 'hyperopt_pfi']
 
 
 def __dir__():

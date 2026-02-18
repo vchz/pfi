@@ -1,155 +1,83 @@
-"""Flow regression estimator wrapping flow-matching solvers."""
+"""Base flow estimator API."""
 
 import numpy as np
 import torch
 
-from .solvers._fm import FM_
 from ..utils.data import snapshots_from_X
+from ._fm import FM_
 
 
-class FlowRegression:
-    """Estimate drift (and optional growth) models from snapshot data.
+class FlowModel:
+    """Standard flow estimator trained with flow matching.
 
     Parameters
     ----------
-    interp : object
-        Interpolant object implementing ``fit`` and ``predict``.
-    model : torch.nn.Module
-        Drift model consuming inputs of shape ``(batch_size, ndim + 1)``.
-    growth_model : torch.nn.Module or None, default=None
-        Optional growth model used for unbalanced transport.
-    solver : {'fm'}, default='fm'
+    flow : torch.nn.Module
+        Flow model consuming ``(batch_size, ndim + 1)`` inputs.
+    growth : torch.nn.Module or None, default=None
+        Optional growth model.
+    solver : str, default='fm'
         Solver backend.
-    solver_kwargs : dict, default=None
-        Extra keyword arguments passed to the selected solver.
-        For ``solver='fm'``, this can include ``scheduler_kwargs`` to
-        configure the internal ``MultiStepLR``.
+    solver_kwargs : dict or None, default=None
+        Extra keyword arguments for solver. For ``solver='fm'``, this must
+        include ``interp``.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
-
-    Attributes
-    ----------
-    Ndim_ : int
-        Inferred state dimension, set during `fit`.
-    model_ : torch.nn.Module
-        Fitted drift model, set during `fit`.
-    growth_model_ : torch.nn.Module or None
-        Fitted growth model when provided, set during `fit`.
-    times_ : ndarray of shape (n_times,)
-        Sorted unique training times, set during `fit`.
     """
 
-    def __init__(
-        self,
-        interp,
-        model,
-        growth_model=None,
-        solver="fm",
-        solver_kwargs=None,
-        device="cpu",
-    ):
-        self.model = model
-        self.interp = interp
-        self.growth_model = growth_model
+    def __init__(self, flow=None, growth=None, solver="fm", solver_kwargs=None, device="cpu"):
+        self.flow = flow
+        self.growth = growth
         self.solver = solver
-        self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
+        self.solver_kwargs = {} if solver_kwargs is None else solver_kwargs
         self.device = device
 
-    def fit(
-        self,
-        X,
-        y=None,
-    ):
-        """Fit flow models from time-augmented samples.
-
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, ndim + 1)
-            Input data where the last column contains time.
-        y : None, default=None
-            Ignored. Present for estimator API compatibility.
-
-        Returns
-        -------
-        self : FlowRegression
-            Fitted estimator.
-        """
+    def fit(self, X, y=None):
+        """Fit drift (and optional growth) from time-augmented samples."""
         dist, times = snapshots_from_X(X)
 
         self.Ndim_ = X.shape[1] - 1
-        self.model_ = self.model.to(self.device)
-        self.growth_model_ = self.growth_model
-        if self.growth_model_ is not None:
-            self.growth_model_ = self.growth_model_.to(self.device)
+        self.flow_ = self.flow.to(self.device)
+        self.growth_ = self.growth
+        if self.growth_ is not None:
+            self.growth_ = self.growth_.to(self.device)
 
         if self.solver == "fm":
-            self.model_, self.growth_model_, loss_hist = FM_(
+            solver_kwargs = dict(self.solver_kwargs)
+            interp = solver_kwargs.pop("interp")
+            self.flow_, self.growth_, loss_hist = FM_(
                 dist,
                 times,
-                self.interp,
-                self.model_,
-                growth_model=self.growth_model_,
+                interp,
+                self.flow_,
+                growth_model=self.growth_,
                 device=self.device,
-                **self.solver_kwargs,
+                **solver_kwargs,
             )
             self.loss_ = np.asarray(loss_hist)
         else:
-            raise NotImplementedError("Other flow regression solvers (sde, ode, cnf) not implemented")
+            raise NotImplementedError("No other flow solvers implemented")
 
         self.times_ = np.unique(X[:, -1])
-        self.model_ = self.model_.eval()
+        self.flow_ = self.flow_.eval()
         return self
 
-    def predict(
-        self,
-        X,
-    ):
-        """Predict flow vectors for input states.
+    def _predict(self, X, stoch=False):
+        """Internal torch prediction hook used by base methods."""
+        return self.flow_(X, stoch=stoch)
 
-        Parameters
-        ----------
-        X : array-like of shape (n_samples, ndim + 1)
-            Input states with time in the last column.
-
-        Returns
-        -------
-        drift : ndarray of shape (n_samples, ndim)
-            Predicted flow vectors ``f(x, t)``.
-        """
-        X = torch.tensor(X, dtype=torch.float32, device=self.device)
+    def predict(self, X, stoch=False):
+        """Predict flow vectors for input states."""
+        Xt = torch.tensor(X, dtype=torch.float32, device=self.device)
         with torch.no_grad():
-            drift = self.model_(X)
-        return drift.detach().cpu().numpy()
+            out = self._predict(Xt, stoch=stoch)
+        return out.detach().cpu().numpy()
 
-    def sample(
-        self,
-        X,
-        Dt,
-        dt=0.01,
-        stoch=False,
-    ):
-        """Simulate trajectories from initial states over a duration ``Dt``.
-
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, ndim + 1)
-            Initial states with time in the last column.
-        Dt : float
-            Simulation duration.
-        dt : float, default=0.01
-            Euler integration step.
-        stoch : bool, default=False
-            If ``True``, use stochastic simulation with model-provided
-            noise terms. If ``False``, use deterministic Euler flow.
-
-        Returns
-        -------
-        x_final : ndarray of shape (n_samples, ndim)
-            Simulated states after duration ``Dt``.
-        """
-        X = torch.tensor(X, dtype=torch.float32, device=self.device)
-        x = X[:, : self.Ndim_].clone()
-        t = X[:, -1].clone()
+    def sample(self, X, Dt, dt=0.01, stoch=False):
+        """Simulate trajectories from initial states over ``Dt``."""
+        Xt = torch.tensor(X, dtype=torch.float32, device=self.device)
+        x = Xt[:, : self.Ndim_].clone()
+        t = Xt[:, -1].clone()
 
         n_steps = int(Dt / dt)
         sqrt_dt = np.sqrt(dt)
@@ -158,38 +86,17 @@ class FlowRegression:
             for _ in range(n_steps):
                 inp = torch.cat([x, t[:, None]], dim=1)
                 if stoch:
-                    drift, noise = self.model_(inp, stoch=True)
+                    drift, noise = self._predict(inp, stoch=True)
                     x = x + drift * dt + noise * sqrt_dt
                 else:
-                    drift = self.model_(inp, stoch=False)
+                    drift = self._predict(inp, stoch=False)
                     x = x + drift * dt
                 t = t + dt
 
         return x.detach().cpu().numpy()
 
-    def score(
-        self,
-        X,
-        y,
-        stoch=False,
-        dt=0.01,
-    ):
-        """Compute per-time energy distance between simulated and target data.
-
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, ndim + 1)
-            Source samples with time in the last column.
-        y : ndarray of shape (n_targets, ndim + 1)
-            Target samples with time in the last column.
-        stoch : bool, default=False
-            If ``True``, use stochastic simulation in ``sample``.
-
-        Returns
-        -------
-        scores : ndarray of shape (n_pairs,)
-            Energy distance for each paired source/target time.
-        """
+    def score(self, X, y, stoch=False, dt=0.01):
+        """Compute per-time energy distance between simulated and targets."""
         import geomloss
 
         X = np.asarray(X)

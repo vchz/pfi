@@ -1,10 +1,9 @@
 import numpy as np
 import torch
 
-from pfi.flow import FlowRegression
+from pfi.flow import FlowModel
 from pfi.flow.interpolants import ChebyshevInterpolant
-from pfi.flow.models import OUFlow
-from pfi.score.models import OUScore
+from pfi.flow.models import OUFlow, OUScore
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
@@ -56,16 +55,15 @@ def test_fm_chebyshev_recovers_ou_b():
         D=D_,
     )
 
-    flow_reg = FlowRegression(
-        interp=interp,
-        model=flow_model,
-        growth_model=None,
+    flow_reg = FlowModel(
+        flow=flow_model,
+        growth=None,
         solver="fm",
-        solver_kwargs=dict(n_epochs=5000, lr=1e-2),
+        solver_kwargs=dict(interp=interp, n_epochs=5000, lr=1e-2),
         device=device,
     )
     flow_reg.fit(X)
 
-    B_inf = flow_reg.model_.B.detach().cpu().numpy()
+    B_inf = flow_reg.flow_.B.detach().cpu().numpy()
     rel_err = np.linalg.norm(B_inf - B) / np.linalg.norm(B)
     assert rel_err < 0.07

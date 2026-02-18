@@ -7,68 +7,6 @@ import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
 
-class CompoundModel(nn.Module):
-    """Common duck-typed container for models holding a `net`.
-
-    Parameters
-    ----------
-    net : torch.nn.Module
-        Wrapped module implementing a callable forward pass.
-    """
-
-    def __init__(
-        self,
-        net,
-    ):
-        super(CompoundModel, self).__init__()
-        self.net = net
-
-    def forward(
-        self,
-        x,
-        stoch=False,
-    ):
-        """Forward to the wrapped network.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor passed to ``net``.
-        stoch : bool, default=False
-            Optional flag accepted for API consistency with flow models.
-            This base implementation ignores it.
-
-        Returns
-        -------
-        y : torch.Tensor
-            Output of ``net(x)``.
-        """
-        return self.net(x)
-
-    def set_scales(
-        self,
-        mean,
-        std,
-    ):
-        """Propagate feature scales when the wrapped net supports it.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise mean.
-        std : torch.Tensor
-            Feature-wise standard deviation.
-
-        Returns
-        -------
-        self : CompoundModel
-            Model instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
-
-
 class BatchNorm(object):
     """Simple affine normalizer ``(x - mean) / std``.
 
@@ -307,23 +245,6 @@ class SpectralNormDNN(nn.Module):
         """
         return self.net(self.bn(x))
 
-    def set_scales(self, mean, std):
-        """Update normalization statistics.
-
-        Parameters
-        ----------
-        mean : torch.Tensor of shape (1, n_features)
-            New feature means.
-        std : torch.Tensor of shape (1, n_features)
-            New feature standard deviations.
-
-        Returns
-        -------
-        self : DNN
-            Estimator instance.
-        """
-        self.bn = BatchNorm(mean, std)
-        return self
     
 class FastTensorDataLoader:
     """Lightweight mini-batch iterator over in-memory tensors.

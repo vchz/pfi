@@ -1,13 +1,17 @@
-"""Public score-estimation APIs and solver modules.
+"""Public score APIs and solver functions."""
 
-This submodule exposes the score matching estimator alongside score models and solver backends.
-"""
-
-from ._base import ScoreMatching
-from . import models, solvers
+from ._base import ScoreModel
+from ._dsm import (DSM_, 
+                   freeze_dsm_score, 
+                   generate_data_DSM, 
+                   generate_noisy_training_data_batch, 
+                   geometric_sequence)
 
 __all__ = [
-    "ScoreMatching",
-    "models",
-    "solvers",
+    "ScoreModel",
+    "DSM_",
+    "freeze_dsm_score",
+    "generate_data_DSM",
+    "geometric_sequence",
+    "generate_noisy_training_data_batch",
 ]

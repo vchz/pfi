@@ -5,8 +5,8 @@ import torch
 from torch.optim.lr_scheduler import MultiStepLR
 from tqdm import tqdm
 
-from ...utils.nns import FastTensorDataLoader, loss_grad_std
-from ...utils.data import subsample_shuffle
+from ..utils.nns import FastTensorDataLoader, FreezeVarDNN, loss_grad_std
+from ..utils.data import subsample_shuffle
 
 
 def geometric_sequence(
@@ -154,6 +154,8 @@ def DSM_(
         Trained score network.
     loss_hist : list of float
         Epoch-wise training loss values.
+    min_noise : float
+        Smallest noise level used by the DSM schedule.
     """
     dist = torch.stack(subsample_shuffle(dist), dim=0)
 
@@ -249,7 +251,8 @@ def DSM_(
             if epoch % 500 == 0:
                 tqdm.write(f"epoch: {epoch} c_: {c_.detach().cpu().numpy()}")
 
-    return net, loss_hist
+    min_noise = sigma[-1]
+    return net, loss_hist, min_noise
 
 
 def generate_data_DSM(
@@ -261,6 +264,7 @@ def generate_data_DSM(
     L,
     ndim,
     device,
+    noise_lvl=0,
 ):
     """Sample from a trained DSM model using annealed Langevin dynamics.
 
@@ -282,21 +286,26 @@ def generate_data_DSM(
         State dimension.
     device : str or torch.device
         Device used for generation.
+    noise_lvl : float, default=0
+        Noise level at which to stop the annealing schedule.
+        Effective stopping level is ``max(min(sigma), noise_lvl)`` where
+        ``sigma`` is the geometric noise sequence.
 
     Returns
     -------
-    sol : ndarray of shape (nsamples, ndim + 2)
+    sol : torch tensor of shape (nsamples, ndim + 2)
         Generated states including auxiliary columns.
-    gen_mean : torch.Tensor of shape (ndim,)
-        Mean of generated state coordinates.
     """
     eps = 1e-4
     sol = torch.tensor(init_, dtype=torch.float32).to(device)
     sol[:, ndim + 1] = time_
 
     sigma = geometric_sequence(L)
+    min_sigma = np.min(sigma)
+    target_noise = max(min_sigma, noise_lvl)
+    stop_k = int(np.argmin(np.abs(sigma - target_noise)))
 
-    for k in range(0, L):
+    for k in range(0, stop_k + 1):
         alpha = eps * ((sigma[k] ** 2) / (sigma[L - 1] ** 2))
         sol[:, ndim] = sigma[k]
 
@@ -305,7 +314,28 @@ def generate_data_DSM(
             guru = infNet(sol)
             sol[:, 0:ndim] = sol[:, 0:ndim] + 0.5 * alpha * guru + np.sqrt(alpha) * z
 
-    gen_mean = torch.mean(sol, axis=0)[0:ndim]
-    sol = sol.cpu().data.numpy().reshape(nsamples, ndim + 2)
+    sol = torch.reshape(sol, (nsamples, ndim + 2))
 
-    return sol, gen_mean
+    return sol
+
+
+def freeze_dsm_score(
+    net,
+    noise_lvl=0,
+):
+    """Freeze the DSM noise-conditioning variable for flow inference.
+
+    Parameters
+    ----------
+    net : torch.nn.Module
+        Noise-conditional score network taking ``(x, sigma, t)`` inputs.
+    noise_lvl : float, default=0
+        Noise level used to freeze the sigma-conditioning input.
+
+    Returns
+    -------
+    frozen : torch.nn.Module
+        Wrapper taking ``(x, t)`` and injecting the fixed sigma value before
+        the time coordinate.
+    """
+    return FreezeVarDNN(net=net, var_index=-1, var_value=noise_lvl)

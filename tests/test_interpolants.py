@@ -3,8 +3,7 @@ import torch
 
 from pfi.flow.interpolants import (ChebyshevInterpolant, 
                                    MMOT_trajectories)
-from pfi.flow.models import OUFlow
-from pfi.score.models import OUScore
+from pfi.flow.models import OUFlow, OUScore
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 

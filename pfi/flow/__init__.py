@@ -1,15 +1,16 @@
-"""Public flow-regression APIs, models, and solver modules.
+"""Public flow APIs, models, interpolants, and external wrappers."""
 
-This submodule provides flow regression estimators and the building blocks
-needed to train and evaluate flow models.
-"""
-
-from ._base import FlowRegression
-from . import models, solvers, interpolants
+from ._base import FlowModel
+from ._fm import FM_, interpolate_old2new
+from . import models
+from . import interpolants
+from . import external
 
 __all__ = [
-    "FlowRegression",
+    "FlowModel",
+    "FM_",
+    "interpolate_old2new",
     "models",
-    "solvers",
     "interpolants",
+    "external",
 ]

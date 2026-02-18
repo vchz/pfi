@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from ...utils.nns import loss_grad_std
-from ...utils.data import subsample_shuffle
-from ..interpolants import MMOT_trajectories, select_best_lambda, ChebyshevInterpolant
+from ..utils.data import subsample_shuffle
+from ..utils.nns import loss_grad_std
+from .interpolants import MMOT_trajectories, select_best_lambda, ChebyshevInterpolant
 
 
 def interpolate_old2new(
@@ -55,6 +55,72 @@ def interpolate_old2new(
     )
 
     return torch.permute(x_interp, (1, 0, 2))
+
+
+def compute_conditional_distributions(
+    interp,
+    Dist,
+    batch_size,
+    weights,
+    nodes_fit,
+    nodes_eval,
+    device="cpu",
+    sigma=0.001,
+):
+    """Build conditional training pairs for weighted flow matching.
+
+    Parameters
+    ----------
+    interp : object
+        Interpolant implementing ``fit`` and ``predict``.
+    Dist : torch.Tensor of shape (n_nodes, nsamples, ndim)
+        OT trajectories on a temporal grid.
+    batch_size : int
+        Number of trajectories sampled per iteration.
+    weights : torch.Tensor of shape (n_nodes, nsamples)
+        Per-trajectory importance weights.
+    nodes_fit : torch.Tensor of shape (batch_size, n_nodes)
+        Nodes used to fit interpolants.
+    nodes_eval : torch.Tensor of shape (batch_size, n_eval)
+        Nodes used to evaluate interpolants.
+    device : str or torch.device, default='cpu'
+        Device used for output tensors.
+    sigma : float, default=0.001
+        Gaussian perturbation added to interpolated positions.
+
+    Returns
+    -------
+    xtrain : torch.Tensor of shape (batch_size * n_eval, ndim + 1)
+        Inputs for drift training (state + time).
+    ytrain : torch.Tensor of shape (batch_size * n_eval, ndim)
+        Target velocities.
+    weights : torch.Tensor of shape (batch_size, n_nodes)
+        Sampled weights aligned with ``xtrain``/``ytrain``.
+    """
+    nsamples = Dist.shape[1]
+    n_eval = nodes_eval.shape[1]
+    ndim = Dist.shape[2]
+
+    xtrain = torch.zeros((batch_size * n_eval, ndim + 1), dtype=torch.float32, device=device)
+    ytrain = torch.zeros((batch_size * n_eval, ndim), dtype=torch.float32, device=device)
+
+    xind = torch.randint(0, nsamples, (batch_size,))
+    Dist = torch.as_tensor(Dist, dtype=torch.float32, device=device)
+    weights = torch.as_tensor(weights, dtype=torch.float32, device=device)
+
+    weights = torch.permute(weights[:, xind], (1, 0))
+    Dist = torch.permute(Dist[:, xind, 0:ndim], (1, 0, 2))
+
+    interp.fit(nodes_fit, Dist)
+    x_interp, dx_interp = interp.predict(nodes_eval)
+
+    xtrain[:, ndim] = nodes_eval.reshape(batch_size * n_eval)
+
+    mut = x_interp.view(batch_size * n_eval, ndim)
+    xtrain[:, 0:ndim] = mut + sigma * torch.randn_like(mut)
+    ytrain[:, 0:ndim] = dx_interp.view(batch_size * n_eval, ndim)
+
+    return xtrain, ytrain, weights
 
 
 def FM_(
@@ -116,7 +182,6 @@ def FM_(
     loss_hist : list of float
         Epoch-wise total objective values.
     """
-    
     dist_tensor = torch.stack(subsample_shuffle(dist), dim=0).to(device)
     x_mean = dist_tensor.mean(dim=(0, 1)).unsqueeze(0)
     x_std = dist_tensor.std(dim=(0, 1)).unsqueeze(0)
@@ -139,7 +204,6 @@ def FM_(
     batch_ot_samples_uniform = interpolate_old2new(batch_ot_samples, data_nodes, uniform_nodes).to(device)
 
     batch_size = int(nsamples / 4)
-    print(nsamples, batch_size)
     uniform_batch = uniform_kind.to(device).expand(batch_size, -1)
 
     data_full = uniform_kind.to(device).expand(batch_ot_samples_uniform.shape[1], -1)
@@ -218,16 +282,12 @@ def FM_(
         l1 = torch.sum(wcfm_obj)
         l2 = torch.sum(mass_balance)
 
-        if not zero_growth:
-            if epoch % 10 == 0:
-                with torch.no_grad():
-                    std_l1 = loss_grad_std(l1, drift_net, device)
-                    if zero_growth:
-                        std_l2 = torch.tensor(1.0, device=device)
-                    else:
-                        std_l2 = loss_grad_std(l2, growth_model, device)
-                    lamb_hat = std_l1 / std_l2
-                    lamb = (1 - alpha_ann) * lamb + alpha_ann * lamb_hat
+        if not zero_growth and epoch % 10 == 0:
+            with torch.no_grad():
+                std_l1 = loss_grad_std(l1, drift_net, device)
+                std_l2 = loss_grad_std(l2, growth_model, device)
+                lamb_hat = std_l1 / std_l2
+                lamb = (1 - alpha_ann) * lamb + alpha_ann * lamb_hat
 
         total_loss = l1 + lamb * l2
         loss_hist.append(total_loss.item())
@@ -246,69 +306,3 @@ def FM_(
                 )
 
     return drift_net, growth_model, loss_hist
-
-
-def compute_conditional_distributions(
-    interp,
-    Dist,
-    batch_size,
-    weights,
-    nodes_fit,
-    nodes_eval,
-    device="cpu",
-    sigma=0.001,
-):
-    """Build conditional training pairs for weighted flow matching.
-
-    Parameters
-    ----------
-    interp : object
-        Interpolant implementing ``fit`` and ``predict``.
-    Dist : torch.Tensor of shape (n_nodes, nsamples, ndim)
-        OT trajectories on a temporal grid.
-    batch_size : int
-        Number of trajectories sampled per iteration.
-    weights : torch.Tensor of shape (n_nodes, nsamples)
-        Per-trajectory importance weights.
-    nodes_fit : torch.Tensor of shape (batch_size, n_nodes)
-        Nodes used to fit interpolants.
-    nodes_eval : torch.Tensor of shape (batch_size, n_eval)
-        Nodes used to evaluate interpolants.
-    device : str or torch.device, default='cpu'
-        Device used for output tensors.
-    sigma : float, default=0.001
-        Gaussian perturbation added to interpolated positions.
-
-    Returns
-    -------
-    xtrain : torch.Tensor of shape (batch_size * n_eval, ndim + 1)
-        Inputs for drift training (state + time).
-    ytrain : torch.Tensor of shape (batch_size * n_eval, ndim)
-        Target velocities.
-    weights : torch.Tensor of shape (batch_size, n_nodes)
-        Sampled weights aligned with ``xtrain``/``ytrain``.
-    """
-    nsamples = Dist.shape[1]
-    n_eval = nodes_eval.shape[1]
-    ndim = Dist.shape[2]
-
-    xtrain = torch.zeros((batch_size * n_eval, ndim + 1), dtype=torch.float32, device=device)
-    ytrain = torch.zeros((batch_size * n_eval, ndim), dtype=torch.float32, device=device)
-
-    xind = torch.randint(0, nsamples, (batch_size,))
-    Dist = torch.tensor(Dist, dtype=torch.float32, device=device)
-    weights = torch.tensor(weights, dtype=torch.float32, device=device)
-
-    weights = torch.permute(weights[:, xind], (1, 0))
-    Dist = torch.permute(Dist[:, xind, 0:ndim], (1, 0, 2))
-
-    interp.fit(nodes_fit, Dist)
-    x_interp, dx_interp = interp.predict(nodes_eval)
-
-    xtrain[:, ndim] = nodes_eval.reshape(batch_size * n_eval)
-
-    mut = x_interp.view(batch_size * n_eval, ndim)
-    xtrain[:, 0:ndim] = mut + sigma * torch.randn_like(mut)
-    ytrain[:, 0:ndim] = dx_interp.view(batch_size * n_eval, ndim)
-
-    return xtrain, ytrain, weights
