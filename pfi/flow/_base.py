@@ -154,7 +154,7 @@ class FlowModel:
         return x.detach().cpu().numpy()
 
     def score(self, X, y, stoch=False, dt=0.01, pos=True):
-        """Compute per-time energy distance between simulated and targets.
+        """Compute per-time energy distance after pushing to next target times.
 
         Parameters
         ----------
@@ -173,7 +173,8 @@ class FlowModel:
         Returns
         -------
         scores : ndarray of shape (n_time_pairs,)
-            Energy distance for each paired time point.
+            Energy distance for each source time in ``X`` that has a strictly
+            later time in ``y``.
         """
         import geomloss
 
@@ -181,13 +182,14 @@ class FlowModel:
         y = np.asarray(y)
         x_times = np.sort(np.unique(X[:, -1]))
         y_times = np.sort(np.unique(y[:, -1]))
-        npairs = min(len(x_times), len(y_times))
         scores = []
 
         loss = geomloss.SamplesLoss("energy")
-        for i in range(npairs):
-            tx = x_times[i]
-            ty = y_times[i]
+        for tx in x_times:
+            y_later = y_times[y_times > tx]
+            if y_later.size == 0:
+                continue
+            ty = y_later[0]
             x_t = X[np.isclose(X[:, -1], tx)]
             y_t = y[np.isclose(y[:, -1], ty)][:, : self.Ndim_]
             pred = self.sample(x_t, Dt=(ty - tx), stoch=stoch, dt=dt, pos=pos)

@@ -108,75 +108,14 @@ pfi_est = make_pfi_estimator(ndim=ndim, params=params, device=device, seed=0)
 pfi_est.fit(X)
 ```
 
-## Factory Functions
+## Score solver Families
 
-Top-level helpers exported by `pfi`:
-- `make_score_estimator(ndim, params=None, device="cpu", seed=0, verbose=True)`
-- `make_flow_estimator(ndim, params=None, device="cpu", seed=0, verbose=True, score=None)`
-- `make_pfi_estimator(ndim, params=None, device="cpu", seed=0, verbose=True)`
-- `hyperopt_pfi(X, n_trials=50, search_space=None, device="cpu", seed=0)`
+- `dsm`: implements denoising score matching
+  - https://doi.org/10.1162/NECO_a_00142
+  - https://doi.org/10.48550/arXiv.1907.05600
+- `ssm`: sliced score matching, *not implemented yet*
 
-Default parameter dictionary:
-- `pfi.DEFAULT_PFI_PARAMETERS`
-
-### `params` dictionary: expected keys
-
-The factory functions read a single `params` dictionary (missing keys fall back
-to `DEFAULT_PFI_PARAMETERS`, except for the `s_solver_kwargs` and `f_solver_kwargs` which are overwritten as soon as they are set by the user).
-
-Main keys:
-- `s_solver`, `f_solver`
-- `s_net`, `f_net`, `g_net` (network classes; `g_net=None` disables growth net)
-- `s_net_kwargs`, `f_net_kwargs` (kwargs passed to network constructors)
-- `s_width`, `s_depth`, `f_width`, `f_depth`
-- `s_noise_lvl`
-- `s_solver_kwargs`, `f_solver_kwargs`
-- `f_model` (flow model class)
-- `f_model_kwargs` (e.g. `{"lx": ...}`)
-- `s_lr`, `f_lr`, `s_n_epochs`, `f_n_epochs`
-- `fit_on_score_samples`
-
-Typical example:
-
-```python
-params = {
-    "s_solver": "dsm",
-    "f_solver": "pfm",
-    "f_model": CLEFlow,
-    "f_model_kwargs": {"lx": 0.3}, # sets the decay rate at 0.3 1/day
-    "s_net": SpectralNormDNN,
-    "f_net": SpectralNormDNN,
-    "g_net": None,
-    "s_net_kwargs": {"activation": nn.ELU(), "feature_norm": False},
-    "f_net_kwargs": {"activation": nn.ELU(), "feature_norm": True},
-    "s_solver_kwargs": {"L": 5, "adp_flag": 0},
-    "f_solver_kwargs": {"fac": 4, "nb": 1, "interp": LinearInterpolant(), "bs": 512},
-    "s_width": 128,
-    "s_depth": 4,
-    "f_width": 128,
-    "f_depth": 3,
-    "s_noise_lvl": 0.01,
-    "s_lr": 5e-4,
-    "f_lr": 1e-3,
-    "s_n_epochs": 4000,
-    "f_n_epochs": 1500,
-    "fit_on_score_samples": False,
-}
-```
-
-## Solver Names
-
-Current `FlowModel` solver keys:
-- `"pfm"`
-- `"upfi"`
-- `"future.ufm_uot"`
-- `"future.ufm_ot"`
-- `"external.deepruotv2"`
-
-Current `ScoreModel` solver key:
-- `"dsm"`
-
-## Solver Families
+## Flow solver Families
 
 - `upfi`: implements the PFI and UPFI algorithms presented in:
   - https://doi.org/10.48550/arXiv.2505.13197
@@ -185,12 +124,13 @@ Current `ScoreModel` solver key:
   (publication in preparation). This is the fastest and more stable solver.
 - `external.*`: wrappers around external solvers for benchmarking.  
   Currently available: `external.deepruotv2`. More wrappers will be added.
-- `future.*`: experimental approaches that are not yet fully tested.
+- `future.*`: experimental approaches that are not yet fully tested (currently `"future.ufm_uot"`,and `"future.ufm_ot"`)
+
 
 ## Hyperparameter Optimization
 
 `hyperopt_pfi(X, n_trials, search_space, ...)` is available, but not yet fully
-validated across all solver/model configurations.
+validated across all solver/model configurations. Uses the package optuna to optimize the score and flow objectives (interpolation error).
 
 ## Examples
 
@@ -201,7 +141,7 @@ For runnable end-to-end notebooks, see:
 
 If you do not use `make_pfi_estimator`, the expected sequence is:
 1. fit a `ScoreModel`
-2. freeze the fitted score (for `dsm`)
+2. freeze the fitted score (for the `dsm` solver)
 3. build and fit a `FlowModel` using that frozen score
 
 ### 1) Fit score model
@@ -220,9 +160,9 @@ score_reg.fit(X)
 ```
 
 `ScoreModel.sample(X)` generates samples at the same snapshot times as `X`
-using the fitted score model.  
+using the fitted score model. For the `dsm` solver it uses annealed Langevin dynamics over the multiple noise levels.  
 `ScoreModel.score(X)` returns per-time energy-distance values between generated
-and observed samples.
+and observed samples. Under the hood it calls `ScoreModel.sample(X)`.
 
 ### 2) Freeze score (DSM)
 
@@ -258,9 +198,9 @@ flow_reg.fit(X)
 ```
 
 `FlowModel.sample(X0, Dt, dt, stoch, pos)` simulates trajectories from initial
-states `X0` for horizon `Dt`.  
+states `X0` for horizon `Dt`. If `stoch` is `True` the it simulates stochastic trajectories with Euler-Maruyama. Otherwise it simulates the probability flow trajectories. If `pos` is true it enforces the positivity of the simulated variable by clipping the values to zero when they become negative.
 `FlowModel.score(X, Y, ...)` computes per-time energy-distance values by pushing
-`X` to target times and comparing against `Y`.
+`X` to target times and comparing against `Y`. It only pushes `X` until the directly consecutive time in `Y` before comparing it
 
 ## API Reference
 

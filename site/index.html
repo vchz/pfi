@@ -395,38 +395,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#factory-functions" class="md-nav__link">
+  <a href="#score-solver-families" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Factory Functions
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Factory Functions">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#params-dictionary-expected-keys" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        params dictionary: expected keys
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#solver-names" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Solver Names
+        Score solver Families
       
     </span>
   </a>
@@ -434,10 +406,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#solver-families" class="md-nav__link">
+  <a href="#flow-solver-families" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Solver Families
+        Flow solver Families
       
     </span>
   </a>
@@ -1615,63 +1587,14 @@ and solver-specific settings through <code>params</code>.</p>
 </span><span id="__span-3-30"><a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a><span class="n">pfi_est</span> <span class="o">=</span> <span class="n">make_pfi_estimator</span><span class="p">(</span><span class="n">ndim</span><span class="o">=</span><span class="n">ndim</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 </span><span id="__span-3-31"><a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a><span class="n">pfi_est</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
-<h2 id="factory-functions">Factory Functions</h2>
-<p>Top-level helpers exported by <code>pfi</code>:
-- <code>make_score_estimator(ndim, params=None, device="cpu", seed=0, verbose=True)</code>
-- <code>make_flow_estimator(ndim, params=None, device="cpu", seed=0, verbose=True, score=None)</code>
-- <code>make_pfi_estimator(ndim, params=None, device="cpu", seed=0, verbose=True)</code>
-- <code>hyperopt_pfi(X, n_trials=50, search_space=None, device="cpu", seed=0)</code></p>
-<p>Default parameter dictionary:
-- <code>pfi.DEFAULT_PFI_PARAMETERS</code></p>
-<h3 id="params-dictionary-expected-keys"><code>params</code> dictionary: expected keys</h3>
-<p>The factory functions read a single <code>params</code> dictionary (missing keys fall back
-to <code>DEFAULT_PFI_PARAMETERS</code>, except for the <code>s_solver_kwargs</code> and <code>f_solver_kwargs</code> which are overwritten as soon as they are set by the user).</p>
-<p>Main keys:
-- <code>s_solver</code>, <code>f_solver</code>
-- <code>s_net</code>, <code>f_net</code>, <code>g_net</code> (network classes; <code>g_net=None</code> disables growth net)
-- <code>s_net_kwargs</code>, <code>f_net_kwargs</code> (kwargs passed to network constructors)
-- <code>s_width</code>, <code>s_depth</code>, <code>f_width</code>, <code>f_depth</code>
-- <code>s_noise_lvl</code>
-- <code>s_solver_kwargs</code>, <code>f_solver_kwargs</code>
-- <code>f_model</code> (flow model class)
-- <code>f_model_kwargs</code> (e.g. <code>{"lx": ...}</code>)
-- <code>s_lr</code>, <code>f_lr</code>, <code>s_n_epochs</code>, <code>f_n_epochs</code>
-- <code>fit_on_score_samples</code></p>
-<p>Typical example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="s2">&quot;s_solver&quot;</span><span class="p">:</span> <span class="s2">&quot;dsm&quot;</span><span class="p">,</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">&quot;f_solver&quot;</span><span class="p">:</span> <span class="s2">&quot;pfm&quot;</span><span class="p">,</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="s2">&quot;f_model&quot;</span><span class="p">:</span> <span class="n">CLEFlow</span><span class="p">,</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">&quot;f_model_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lx&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">},</span> <span class="c1"># sets the decay rate at 0.3 1/day</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="s2">&quot;s_net&quot;</span><span class="p">:</span> <span class="n">SpectralNormDNN</span><span class="p">,</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="s2">&quot;f_net&quot;</span><span class="p">:</span> <span class="n">SpectralNormDNN</span><span class="p">,</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="s2">&quot;g_net&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="s2">&quot;s_net_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ELU</span><span class="p">(),</span> <span class="s2">&quot;feature_norm&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="s2">&quot;f_net_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ELU</span><span class="p">(),</span> <span class="s2">&quot;feature_norm&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="s2">&quot;s_solver_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;L&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">&quot;adp_flag&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="s2">&quot;f_solver_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;fac&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;nb&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;interp&quot;</span><span class="p">:</span> <span class="n">LinearInterpolant</span><span class="p">(),</span> <span class="s2">&quot;bs&quot;</span><span class="p">:</span> <span class="mi">512</span><span class="p">},</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="s2">&quot;s_width&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="s2">&quot;s_depth&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="s2">&quot;f_width&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>    <span class="s2">&quot;f_depth&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    <span class="s2">&quot;s_noise_lvl&quot;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">,</span>
-</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="s2">&quot;s_lr&quot;</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">,</span>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="s2">&quot;f_lr&quot;</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>    <span class="s2">&quot;s_n_epochs&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="s2">&quot;f_n_epochs&quot;</span><span class="p">:</span> <span class="mi">1500</span><span class="p">,</span>
-</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>    <span class="s2">&quot;fit_on_score_samples&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
-</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="p">}</span>
-</span></code></pre></div>
-<h2 id="solver-names">Solver Names</h2>
-<p>Current <code>FlowModel</code> solver keys:
-- <code>"pfm"</code>
-- <code>"upfi"</code>
-- <code>"future.ufm_uot"</code>
-- <code>"future.ufm_ot"</code>
-- <code>"external.deepruotv2"</code></p>
-<p>Current <code>ScoreModel</code> solver key:
-- <code>"dsm"</code></p>
-<h2 id="solver-families">Solver Families</h2>
+<h2 id="score-solver-families">Score solver Families</h2>
+<ul>
+<li><code>dsm</code>: implements denoising score matching</li>
+<li>https://doi.org/10.1162/NECO_a_00142</li>
+<li>https://doi.org/10.48550/arXiv.1907.05600</li>
+<li><code>ssm</code>: sliced score matching, <em>not implemented yet</em></li>
+</ul>
+<h2 id="flow-solver-families">Flow solver Families</h2>
 <ul>
 <li><code>upfi</code>: implements the PFI and UPFI algorithms presented in:</li>
 <li>https://doi.org/10.48550/arXiv.2505.13197</li>
@@ -1680,65 +1603,65 @@ to <code>DEFAULT_PFI_PARAMETERS</code>, except for the <code>s_solver_kwargs</co
   (publication in preparation). This is the fastest and more stable solver.</li>
 <li><code>external.*</code>: wrappers around external solvers for benchmarking.<br />
   Currently available: <code>external.deepruotv2</code>. More wrappers will be added.</li>
-<li><code>future.*</code>: experimental approaches that are not yet fully tested.</li>
+<li><code>future.*</code>: experimental approaches that are not yet fully tested (currently <code>"future.ufm_uot"</code>,and <code>"future.ufm_ot"</code>)</li>
 </ul>
 <h2 id="hyperparameter-optimization">Hyperparameter Optimization</h2>
 <p><code>hyperopt_pfi(X, n_trials, search_space, ...)</code> is available, but not yet fully
-validated across all solver/model configurations.</p>
+validated across all solver/model configurations. Uses the package optuna to optimize the score and flow objectives (interpolation error).</p>
 <h2 id="examples">Examples</h2>
 <p>For runnable end-to-end notebooks, see:
 - https://github.com/vchz/pfi/tree/main/examples</p>
 <h2 id="low-level-usage">Low-Level Usage</h2>
 <p>If you do not use <code>make_pfi_estimator</code>, the expected sequence is:
 1. fit a <code>ScoreModel</code>
-2. freeze the fitted score (for <code>dsm</code>)
+2. freeze the fitted score (for the <code>dsm</code> solver)
 3. build and fit a <code>FlowModel</code> using that frozen score</p>
 <h3 id="1-fit-score-model">1) Fit score model</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreModel</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">score_reg</span> <span class="o">=</span> <span class="n">ScoreModel</span><span class="p">(</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">model</span><span class="o">=</span><span class="n">score_net</span><span class="p">,</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;dsm&quot;</span><span class="p">,</span>  <span class="c1"># currently the only score solver</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;L&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">&quot;n_epochs&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">},</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">noise_lvl</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">)</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="n">score_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreModel</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">score_reg</span> <span class="o">=</span> <span class="n">ScoreModel</span><span class="p">(</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">model</span><span class="o">=</span><span class="n">score_net</span><span class="p">,</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;dsm&quot;</span><span class="p">,</span>  <span class="c1"># currently the only score solver</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;L&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">&quot;n_epochs&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">5e-4</span><span class="p">},</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">noise_lvl</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">)</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">score_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
 <p><code>ScoreModel.sample(X)</code> generates samples at the same snapshot times as <code>X</code>
-using the fitted score model.<br />
+using the fitted score model. For the <code>dsm</code> solver it uses annealed Langevin dynamics over the multiple noise levels.<br />
 <code>ScoreModel.score(X)</code> returns per-time energy-distance values between generated
-and observed samples.</p>
+and observed samples. Under the hood it calls <code>ScoreModel.sample(X)</code>.</p>
 <h3 id="2-freeze-score-dsm">2) Freeze score (DSM)</h3>
 <p>For <code>dsm</code>, the flow models should receive a frozen score callable:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">freeze_dsm_score</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">frozen_score</span> <span class="o">=</span> <span class="n">freeze_dsm_score</span><span class="p">(</span><span class="n">score_reg</span><span class="o">.</span><span class="n">model_</span><span class="p">,</span> <span class="n">noise_lvl</span><span class="o">=</span><span class="n">score_reg</span><span class="o">.</span><span class="n">noise_lvl_</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">freeze_dsm_score</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">frozen_score</span> <span class="o">=</span> <span class="n">freeze_dsm_score</span><span class="p">(</span><span class="n">score_reg</span><span class="o">.</span><span class="n">model_</span><span class="p">,</span> <span class="n">noise_lvl</span><span class="o">=</span><span class="n">score_reg</span><span class="o">.</span><span class="n">noise_lvl_</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="3-build-and-fit-flow-model">3) Build and fit flow model</h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlowModel</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CLEFlow</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">flow_model</span> <span class="o">=</span> <span class="n">CLEFlow</span><span class="p">(</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">net</span><span class="o">=</span><span class="n">flow_net</span><span class="p">,</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">score</span><span class="o">=</span><span class="n">frozen_score</span><span class="p">,</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">Ndim</span><span class="o">=</span><span class="n">ndim</span><span class="p">,</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="n">lx</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">)</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="n">flow_reg</span> <span class="o">=</span> <span class="n">FlowModel</span><span class="p">(</span>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>    <span class="n">flow</span><span class="o">=</span><span class="n">flow_model</span><span class="p">,</span>
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>    <span class="n">growth</span><span class="o">=</span><span class="n">growth_model</span><span class="p">,</span>  <span class="c1"># or None</span>
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;pfm&quot;</span><span class="p">,</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;n_epochs&quot;</span><span class="p">:</span> <span class="mi">1500</span><span class="p">,</span> <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="s2">&quot;fac&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;nb&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
-</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="p">)</span>
-</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="n">flow_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlowModel</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CLEFlow</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">flow_model</span> <span class="o">=</span> <span class="n">CLEFlow</span><span class="p">(</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">net</span><span class="o">=</span><span class="n">flow_net</span><span class="p">,</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">score</span><span class="o">=</span><span class="n">frozen_score</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">Ndim</span><span class="o">=</span><span class="n">ndim</span><span class="p">,</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">lx</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">)</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="n">flow_reg</span> <span class="o">=</span> <span class="n">FlowModel</span><span class="p">(</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">flow</span><span class="o">=</span><span class="n">flow_model</span><span class="p">,</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">growth</span><span class="o">=</span><span class="n">growth_model</span><span class="p">,</span>  <span class="c1"># or None</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;pfm&quot;</span><span class="p">,</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;n_epochs&quot;</span><span class="p">:</span> <span class="mi">1500</span><span class="p">,</span> <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="s2">&quot;fac&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;nb&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="p">)</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="n">flow_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
 <p><code>FlowModel.sample(X0, Dt, dt, stoch, pos)</code> simulates trajectories from initial
-states <code>X0</code> for horizon <code>Dt</code>.<br />
+states <code>X0</code> for horizon <code>Dt</code>. If <code>stoch</code> is <code>True</code> the it simulates stochastic trajectories with Euler-Maruyama. Otherwise it simulates the probability flow trajectories. If <code>pos</code> is true it enforces the positivity of the simulated variable by clipping the values to zero when they become negative.
 <code>FlowModel.score(X, Y, ...)</code> computes per-time energy-distance values by pushing
-<code>X</code> to target times and comparing against <code>Y</code>.</p>
+<code>X</code> to target times and comparing against <code>Y</code>. It only pushes <code>X</code> until the directly consecutive time in <code>Y</code> before comparing it</p>
 <h2 id="api-reference">API Reference</h2>
 <ul>
 <li><a href="api/pfi/summary.md"><code>pfi</code> API</a></li>
