@@ -1452,8 +1452,7 @@
 <li>aliases <code>"natcomm"</code> or <code>"kaggle"</code></li>
 </ul>
 <p>For aliases, data is fetched from the package Zenodo repository:
-<a href="https://doi.org/10.5281/zenodo.19237707">https://doi.org/10.5281/zenodo.19237707</a></p>
-<p>Downloaded files are cached in <code>pfi.utils.data.PFI_DATA_FOLDER</code> (default <code>~/pfi_data</code>).</p>
+<a href="https://doi.org/10.5281/zenodo.19237707">https://doi.org/10.5281/zenodo.19237707</a> and downloaded files are cached in <code>pfi.utils.data.PFI_DATA_FOLDER</code> (default <code>~/pfi_data</code>).</p>
 <h3 id="using-a-composite-estimator">Using a composite estimator</h3>
 <p>Use <code>make_pfi_estimator</code> for the standard pipeline (fit score, then fit flow):</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -1483,7 +1482,7 @@
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="s2">&quot;f_model_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lx&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">},</span>
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="s2">&quot;s_net&quot;</span><span class="p">:</span> <span class="n">SpectralNormDNN</span><span class="p">,</span>
 </span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="s2">&quot;f_net&quot;</span><span class="p">:</span> <span class="n">SpectralNormDNN</span><span class="p">,</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="s2">&quot;g_net&quot;</span><span class="p">:</span> <span class="n">DNN</span><span class="p">,</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="s2">&quot;g_net&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="s2">&quot;s_net_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ELU</span><span class="p">(),</span> <span class="s2">&quot;feature_norm&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
 </span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="s2">&quot;f_net_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ELU</span><span class="p">(),</span> <span class="s2">&quot;feature_norm&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
 </span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="s2">&quot;s_width&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
@@ -1502,11 +1501,7 @@
 </span></code></pre></div>
 If you specify any parameter when building the estimator, it will update this dictionnary, except for any nested dictionnary which is replaced with the user chosen values.</p>
 <h3 id="quick-note-on-the-solvers">Quick note on the solvers</h3>
-<p>Score solvers:</p>
-<ul>
-<li><code>dsm</code>: denoising score matching</li>
-<li><code>ssm</code>: reserved, not implemented yet</li>
-</ul>
+<p>There is only one score solver for now: <code>dsm</code>, which impleements denoising score matching, as introduced in <a href="https://doi.org/10.48550/arXiv.1907.05600">https://doi.org/10.48550/arXiv.1907.05600</a> and <a href="https://doi.org/10.1162/NECO_a_00142">https://doi.org/10.1162/NECO_a_00142</a>.</p>
 <p>Flow solvers:</p>
 <ul>
 <li><code>upfi</code>: UPFI/PFI-style formulation (see <a href="https://doi.org/10.48550/arXiv.2505.13197">https://doi.org/10.48550/arXiv.2505.13197</a> and <a href="https://doi.org/10.1073/pnas.2420621122">https://doi.org/10.1073/pnas.2420621122</a>)</li>
