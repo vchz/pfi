@@ -7,7 +7,6 @@ import ot
 def _compute_pairwise_OT_plan(
     x,
     y,
-    *,
     mass_x,
     mass_y,
     reg=0.1,
@@ -18,10 +17,10 @@ def _compute_pairwise_OT_plan(
     nx = x.shape[0]
     ny = y.shape[0]
     c = ot.dist(x, y, metric="sqeuclidean")
+    a = torch.ones((nx,), dtype=x.dtype, device=x.device) * (mass_x / nx)
+    b = torch.ones((ny,), dtype=y.dtype, device=y.device) * (mass_y / ny)
 
     if reg_m is None:
-        a = torch.full((nx,), 1.0 / nx, dtype=x.dtype, device=x.device)
-        b = torch.full((ny,), 1.0 / ny, dtype=y.dtype, device=y.device)
         if method == "exact":
             plan = ot.emd(a, b, c, numItermax=1000000)
         else:
@@ -36,8 +35,6 @@ def _compute_pairwise_OT_plan(
                 numItermax=1000000,
             )
     else:
-        a = torch.full((nx,), mass_x / nx, dtype=x.dtype, device=x.device)
-        b = torch.full((ny,), mass_y / ny, dtype=y.dtype, device=y.device)
         plan = ot.sinkhorn_unbalanced(
             a,
             b,
@@ -87,8 +84,9 @@ def pairwise_OT(
     reg : float, default=0.1
         Entropic regularization strength.
     reg_m : float or None, default=None
-        If ``None``, uses balanced pairwise OT with equal-size subsampling and
-        returns ``psi_traj = 1``. If not ``None``, uses unbalanced OT.
+        If ``None``, uses balanced pairwise OT and returns ``psi_traj = 1``.
+        If not ``None``, uses unbalanced OT with endpoint masses proportional
+        to snapshot sizes.
     method : str, default='sinkhorn'
         Backend passed to POT OT/UOT solvers.
 
@@ -106,20 +104,17 @@ def pairwise_OT(
     batch_paths = []
     batch_psi = []
 
-    if reg_m is None:
-        nsamples = min(s.shape[0] for s in dist)
-        bs = max(1, nsamples // nb)
-        bs_list = [bs] * nsnaps
-        masses = None
-    else:
-        bs_list = [s.shape[0] // nb for s in dist]
-        masses = [s.shape[0] for s in dist]
-    ntraj = min(bs_list)
+    nsamples = min(s.shape[0] for s in dist)
+    bs = max(1, nsamples // nb)
+    masses = torch.as_tensor([1.0] * len(dist), dtype=dtype, device=device) 
+    if reg_m is not None:
+        masses = torch.as_tensor([s.shape[0] for s in dist], dtype=dtype, device=device)
+    ntraj = bs
 
     for _ in range(nb):
         chunks = []
         for k in range(nsnaps):
-            idx = torch.randperm(dist[k].shape[0], device=dist[k].device)[: bs_list[k]]
+            idx = torch.randperm(dist[k].shape[0], device=dist[k].device)[:bs]
             chunks.append(dist[k].index_select(0, idx))
 
         plan_list = []
@@ -128,8 +123,8 @@ def pairwise_OT(
                 _compute_pairwise_OT_plan(
                     chunks[k],
                     chunks[k + 1],
-                    mass_x=None if masses is None else masses[k],
-                    mass_y=None if masses is None else masses[k + 1],
+                    masses[k],
+                    masses[k + 1],
                     reg=reg,
                     reg_m=reg_m,
                     method=method,
@@ -142,7 +137,7 @@ def pairwise_OT(
             paths_k[k] = chunks[k].index_select(0, traj[k])
 
         if reg_m is None:
-            psi_k = torch.ones((nsnaps, ntraj), dtype=dtype, device=device)
+            psi_k = (masses[:, None] / masses[0]).expand(-1, ntraj).clone()
         else:
             psi_k = torch.zeros((nsnaps, ntraj), dtype=dtype, device=device)
             probs = torch.eye(ntraj, dtype=dtype, device=device)
@@ -151,7 +146,7 @@ def pairwise_OT(
                     gamma = plan_list[k - 1]
                     probs = probs @ (gamma / gamma.sum(dim=1, keepdim=True))
                 denom = probs.mean(dim=0).index_select(0, traj[k])
-                psi_k[k] = masses[k] / bs_list[k] / denom
+                psi_k[k] = masses[k] / bs / denom # I think i need to change this to masses[k]/masses[0]/denom
 
         batch_paths.append(paths_k)
         batch_psi.append(psi_k)

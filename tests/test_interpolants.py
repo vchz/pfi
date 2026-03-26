@@ -1,14 +1,14 @@
 import numpy as np
 import torch
 
-from pfi.flow.interpolants import (ChebyshevInterpolant, 
-                                   MMOT_trajectories)
+from pfi.flow.couplings import pairwise_OT
+from pfi.flow.interpolants import ChebyshevInterpolant
 from pfi.flow.models import OUFlow, OUScore
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 
-def test_chebyshev_interpolant_matches_ou_flow():
+def test_chebyshev_interpolant_OU():
     dt = 0.01
     Dt = 0.2
     nsnaps = 5
@@ -40,16 +40,19 @@ def test_chebyshev_interpolant_matches_ou_flow():
     X = X_from_snapshots(samples_full, tt)
 
     np.random.seed(0)
-    dist, batch_ot_samples = MMOT_trajectories([torch.tensor(s, dtype=torch.float32) for s in samples_full])
+    batch_ot_samples, _ = pairwise_OT(
+        [torch.tensor(s, dtype=torch.float32) for s in samples_full],
+        reg_m=None,
+        method="exact",
+    )
 
     npoints = 50
     nodes_fit = torch.tensor(tt, dtype=torch.float32)[None, :].repeat(nsamples, 1)
     nodes_eval = torch.tensor(np.linspace(tt[0], tt[-1], npoints), dtype=torch.float32)[None, :].repeat(nsamples, 1)
 
-    batch_ot_samples = torch.tensor(batch_ot_samples, dtype=torch.float32)
     dist = torch.permute(batch_ot_samples[:, :, 0:ndim], (1, 0, 2))
 
-    interp = ChebyshevInterpolant()
+    interp = ChebyshevInterpolant(reg = 0.01)
 
     B_ = torch.tensor(B, dtype=torch.float32)
     m0_ = torch.tensor(m0, dtype=torch.float32)

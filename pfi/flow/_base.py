@@ -4,78 +4,133 @@ import numpy as np
 import torch
 
 from ..utils.data import snapshots_from_X
-from ._fm import FM_
+from .solvers import PFM_, UPFI_
+from .solvers.future import UFM_UOT_, UFM_OT_
+from .solvers.external import DeepRUOTv2_
+
+
+SOLVER_FUNCS = {
+    "pfm": PFM_,
+    "upfi": UPFI_,
+    "external.deepruotv2": DeepRUOTv2_,
+    "future.ufm_uot": UFM_UOT_,
+    "future.ufm_ot": UFM_OT_,
+}
 
 
 class FlowModel:
-    """Standard flow estimator trained with flow matching.
+    """Flow estimator trained with one of the configured solver backends.
 
-    Parameters
-    ----------
-    flow : torch.nn.Module
-        Flow model consuming ``(batch_size, ndim + 1)`` inputs.
-    growth : torch.nn.Module or None, default=None
-        Optional growth model.
-    solver : str, default='fm'
-        Solver backend.
-    solver_kwargs : dict or None, default=None
-        Extra keyword arguments for solver. For ``solver='fm'``, this must
-        include ``interp``.
-    device : str or torch.device, default='cpu'
-        Device used for training and inference.
+    Supported solvers are configured in ``SOLVER_FUNCS``.
     """
 
-    def __init__(self, flow=None, growth=None, solver="fm", solver_kwargs=None, device="cpu"):
-        self.flow = flow
-        self.growth = growth
+    def __init__(self, flow=None, growth=None, solver="pfm", solver_kwargs=None, device="cpu"):
+        """Initialize a flow estimator.
+
+        Parameters
+        ----------
+        flow : torch.nn.Module, optional
+            Drift model. Ignored if the solver is an external solver.
+        growth : torch.nn.Module, optional
+            Growth model used by unbalanced solvers. Ignored if the solver is an external solver.
+        solver : str, default="pfm"
+            Solver name. Must be a key of ``SOLVER_FUNCS``.
+        solver_kwargs : dict, optional
+            Extra solver parameters forwarded to the selected solver.
+        device : str, default="cpu"
+            Torch device used for fitting and inference.
+        """
         self.solver = solver
         self.solver_kwargs = {} if solver_kwargs is None else solver_kwargs
         self.device = device
 
+        self.flow = flow.to(self.device) if flow is not None else None
+        self.growth = growth.to(self.device) if growth is not None else None
+
     def fit(self, X, y=None):
-        """Fit drift (and optional growth) from time-augmented samples."""
+        """Fit flow parameters from time-augmented samples.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, ndim + 1)
+            Training data with time in the last column.
+        y : None, optional
+            Unused, kept for estimator API compatibility.
+
+        Returns
+        -------
+        self : FlowModel
+            Fitted estimator.
+        """
+        _ = y
         dist, times = snapshots_from_X(X)
+        dist = [d.to(device=self.device, dtype=torch.float32) for d in dist]
+        times = times.to(device=self.device, dtype=torch.float32)
 
         self.Ndim_ = X.shape[1] - 1
-        self.flow_ = self.flow.to(self.device)
-        self.growth_ = self.growth
-        if self.growth_ is not None:
-            self.growth_ = self.growth_.to(self.device)
+        solver_func = SOLVER_FUNCS.get(self.solver)
+        if solver_func is None:
+            raise ValueError(f"Unknown solver '{self.solver}'.")
 
-        if self.solver == "fm":
-            solver_kwargs = dict(self.solver_kwargs)
-            interp = solver_kwargs.pop("interp")
-            self.flow_, self.growth_, loss_hist = FM_(
-                dist,
-                times,
-                interp,
-                self.flow_,
-                growth_model=self.growth_,
-                device=self.device,
-                **solver_kwargs,
-            )
-            self.loss_ = np.asarray(loss_hist)
-        else:
-            raise NotImplementedError("No other flow solvers implemented")
+        self.flow_, self.growth_, loss_hist = solver_func(
+            dist,
+            times,
+            self.flow,
+            growth_model=self.growth,
+            **self.solver_kwargs,
+        )
 
+        self.loss_ = np.asarray(loss_hist)
         self.times_ = np.unique(X[:, -1])
-        self.flow_ = self.flow_.eval()
+        if hasattr(self.flow_, "eval"):
+            self.flow_ = self.flow_.eval()
+        if hasattr(self.growth_, "eval"):
+            self.growth_ = self.growth_.eval()
         return self
 
-    def _predict(self, X, stoch=False):
-        """Internal torch prediction hook used by base methods."""
-        return self.flow_(X, stoch=stoch)
-
     def predict(self, X, stoch=False):
-        """Predict flow vectors for input states."""
-        Xt = torch.tensor(X, dtype=torch.float32, device=self.device)
+        """Predict flow vectors for input states.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, ndim + 1)
+            Inputs with time in the last column.
+        stoch : bool, default=False
+            Whether to request stochastic output.
+
+        Returns
+        -------
+        y_pred : ndarray
+            Predicted drift values.
+        """
+        Xt = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         with torch.no_grad():
-            out = self._predict(Xt, stoch=stoch)
+            out = self.flow_(Xt, stoch=stoch)
         return out.detach().cpu().numpy()
 
-    def sample(self, X, Dt, dt=0.01, stoch=False):
-        """Simulate trajectories from initial states over ``Dt``."""
-        Xt = torch.tensor(X, dtype=torch.float32, device=self.device)
+    def sample(self, X, Dt, dt=0.01, stoch=False, pos=True):
+        """Simulate trajectories from initial states over ``Dt``.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, ndim + 1)
+            Initial states with time in the last column.
+        Dt : float
+            Simulation horizon.
+        dt : float, default=0.01
+            Integration step.
+        stoch : bool, default=False
+            Whether to use stochastic model outputs.
+        pos : bool, default=True
+            If ``True``, applies ``relu`` to keep simulated states nonnegative
+            in stochastic mode.
+
+        Returns
+        -------
+        x_final : ndarray of shape (n_samples, ndim)
+            Simulated final states.
+        """
+        Xt = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         x = Xt[:, : self.Ndim_].clone()
         t = Xt[:, -1].clone()
 
@@ -86,17 +141,40 @@ class FlowModel:
             for _ in range(n_steps):
                 inp = torch.cat([x, t[:, None]], dim=1)
                 if stoch:
-                    drift, noise = self._predict(inp, stoch=True)
-                    x = x + drift * dt + noise * sqrt_dt
+                    drift, noise = self.flow_(inp, stoch=True)
+                    if pos:
+                        x = torch.relu(x + drift * dt + noise * sqrt_dt)
+                    else:
+                        x = x + drift * dt + noise * sqrt_dt
                 else:
-                    drift = self._predict(inp, stoch=False)
+                    drift = self.flow_(inp, stoch=False)
                     x = x + drift * dt
                 t = t + dt
 
         return x.detach().cpu().numpy()
 
-    def score(self, X, y, stoch=False, dt=0.01):
-        """Compute per-time energy distance between simulated and targets."""
+    def score(self, X, y, stoch=False, dt=0.01, pos=True):
+        """Compute per-time energy distance between simulated and targets.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples_x, ndim + 1)
+            Source samples grouped by time in the last column.
+        y : array-like of shape (n_samples_y, ndim + 1)
+            Target samples grouped by time in the last column.
+        stoch : bool, default=False
+            Whether to simulate with stochastic dynamics.
+        dt : float, default=0.01
+            Integration step for sampling.
+        pos : bool, default=True
+            Passed to :meth:`sample` to enforce nonnegative states in
+            stochastic mode.
+
+        Returns
+        -------
+        scores : ndarray of shape (n_time_pairs,)
+            Energy distance for each paired time point.
+        """
         import geomloss
 
         X = np.asarray(X)
@@ -112,10 +190,10 @@ class FlowModel:
             ty = y_times[i]
             x_t = X[np.isclose(X[:, -1], tx)]
             y_t = y[np.isclose(y[:, -1], ty)][:, : self.Ndim_]
-            pred = self.sample(x_t, Dt=(ty - tx), stoch=stoch, dt=dt)
+            pred = self.sample(x_t, Dt=(ty - tx), stoch=stoch, dt=dt, pos=pos)
             ed = loss(
-                torch.tensor(pred, dtype=torch.float32, device=self.device),
-                torch.tensor(y_t, dtype=torch.float32, device=self.device),
+                torch.as_tensor(pred, dtype=torch.float32, device=self.device),
+                torch.as_tensor(y_t, dtype=torch.float32, device=self.device),
             ).item()
             scores.append(ed)
 

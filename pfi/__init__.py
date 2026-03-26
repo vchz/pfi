@@ -5,7 +5,14 @@ and utility helpers.
 """
 
 import importlib as _importlib
-from ._pfi import PFI, hyperopt_pfi
+from ._pfi import (
+    PFI,
+    DEFAULT_PFI_PARAMETERS,
+    hyperopt_pfi,
+    make_flow_estimator,
+    make_pfi_estimator,
+    make_score_estimator,
+)
 
 __version__ = '0.1'
 
@@ -15,7 +22,14 @@ _submodules = [
     'utils',
 ]
 
-__all__ = _submodules + ['PFI', 'hyperopt_pfi']
+__all__ = _submodules + [
+    'PFI',
+    'hyperopt_pfi',
+    'make_score_estimator',
+    'make_flow_estimator',
+    'make_pfi_estimator',
+    'DEFAULT_PFI_PARAMETERS',
+]
 
 
 def __dir__():

@@ -1,13 +1,57 @@
 """Flow model classes used by flow-matching regression."""
 
+from abc import ABC, abstractmethod
+
 import torch
 import torch.nn as nn
 from ..utils.nns import divergence, symsqrt
 
 
+class Flow(nn.Module, ABC):
+    """Abstract base class for flow models."""
+
+    @abstractmethod
+    def set_scales(self, mean, std):
+        """Set normalization statistics on the underlying network."""
+
+    @abstractmethod
+    def evaluate_net(self, x):
+        """Evaluate the underlying drift network."""
 
 
-class CLEFlow(nn.Module):
+class AutonomousFlowMixin:
+    """Scale handling for autonomous models (spatial dimensions only)."""
+
+    def set_scales(self, mean, std):
+        if hasattr(self.net, "set_scales"):
+            self.net.set_scales(mean[: self.Ndim], std[: self.Ndim])
+        return self
+
+
+class NonAutonomousFlowMixin:
+    """Scale handling for non-autonomous models (all input dimensions)."""
+
+    def set_scales(self, mean, std):
+        if hasattr(self.net, "set_scales"):
+            self.net.set_scales(mean, std)
+        return self
+
+
+class PositiveFlowMixin:
+    """Positive drift evaluation mixin."""
+
+    def evaluate_net(self, x):
+        return torch.relu(self.net(x))
+
+
+class GenericFlowMixin:
+    """Unconstrained drift evaluation mixin."""
+
+    def evaluate_net(self, x):
+        return self.net(x)
+
+
+class CLEFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
     """Chemical-Langevin-inspired flow model.
 
     Parameters
@@ -41,25 +85,6 @@ class CLEFlow(nn.Module):
         self.vol = vol
         self.lx = lx
 
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
-
-        Returns
-        -------
-        self : CLEFlow
-            Estimator instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
-
     def forward(
         self,
         Xtrain,
@@ -86,22 +111,35 @@ class CLEFlow(nn.Module):
         with torch.enable_grad():
             xt = Xtrain[:, 0:self.Ndim].clone()
             xt.requires_grad_(True)
-            drift = self.net(xt)
+            drift = self.evaluate_net(xt)
+            DD = drift + self.lx * xt
+            drift_part = drift - self.lx * xt
+
             if stoch:
-                drift_part = drift - self.lx * Xtrain[:, 0:self.Ndim]
-                noise = torch.sqrt(torch.relu(drift + self.lx * Xtrain[:, 0:self.Ndim])) * torch.randn_like(xt)
+                noise = torch.sqrt(torch.relu(DD))* torch.randn_like(xt)
                 return drift_part, noise
-            div_d = divergence(drift, xt, create_graph=self.training)
+            
+            div_d = divergence(DD, xt, create_graph=self.training)
+
         with torch.no_grad():
             score = self.score(Xtrain)
+        
         return (
-            (drift - self.lx * Xtrain[:, 0:self.Ndim])
-            - (0.5 / self.vol) * (div_d + self.lx)
-            - (0.5 / self.vol) * (drift + self.lx * Xtrain[:, 0:self.Ndim]) * score
+            drift_part - (0.5 / self.vol)*(div_d + DD*score)
         )
     
 
-class OUFlow(nn.Module):
+class PositiveCLEFlow(PositiveFlowMixin, CLEFlow):
+    """Positive-output CLE flow using ``ReLU`` on the drift-network output.
+
+    This class reuses :class:`CLEFlow` dynamics and overrides
+    ``evaluate_net`` through :class:`PositiveFlowMixin`.
+    """
+
+    pass
+
+
+class OUFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
     """Ornstein-Uhlenbeck flow model using an external score function.
 
     Parameters
@@ -127,26 +165,7 @@ class OUFlow(nn.Module):
         self.score = score
         self.Ndim = D.shape[0]
         self.B = self.net
-        self.D = D
-
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
-
-        Returns
-        -------
-        self : OUFlow
-            Estimator instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
+        self.register_buffer("D", D)
 
     def forward(
         self,
@@ -182,7 +201,8 @@ class OUFlow(nn.Module):
 
         return drift - torch.einsum("mr,nr->nm", self.D, score)
 
-class AutonomousODEFlow(nn.Module):
+
+class AutonomousODEFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
     """Autonomous deterministic flow with linear degradation.
 
     Parameters
@@ -195,8 +215,6 @@ class AutonomousODEFlow(nn.Module):
         State dimension.
     lx : float, default=1.0
         Linear degradation coefficient.
-    D : float or torch.Tensor, default=1.0
-        Kept for API consistency with other flow classes.
     """
 
     def __init__(
@@ -213,31 +231,91 @@ class AutonomousODEFlow(nn.Module):
         self.Ndim = Ndim
         self.lx = lx
 
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
+    def forward(
+        self,
+        Xtrain,
+        stoch=False,
+    ):
+        """Evaluate autonomous drift with linear degradation.
 
         Parameters
         ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return ``drift - lx*x``.
 
         Returns
         -------
-        self : AutonomousODEFlow
-            Estimator instance.
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Deterministic drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and a zero-noise placeholder.
         """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
+        xt = Xtrain[:, 0:self.Ndim].clone()
+        drift = self.evaluate_net(xt)
+
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = 0
+            return drift_part, noise
+        
+            
+        return (drift - self.lx * xt)
+
+
+class AdditiveGradientFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+    """Additive-noise flow with gradient-based drift.
+
+    The drift is defined as the gradient of a scalar potential network and
+    combined with additive-noise probability-flow correction, as in
+    ``AdditiveFlow``.
+
+    Parameters
+    ----------
+    net : torch.nn.Module
+        Scalar potential network taking ``(batch_size, Ndim)`` inputs and
+        returning either shape ``(batch_size,)`` or ``(batch_size, 1)``.
+    score : torch.nn.Module
+        Score model mapping ``(batch_size, Ndim + 1)`` to ``(batch_size, Ndim)``.
+    Ndim : int
+        State dimension.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    D : float or torch.Tensor, default=0.5
+        Diffusion coefficient/matrix used for score correction and stochastic
+        sampling.
+    """
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+        D=0.5,
+    ):
+        """Initialize additive gradient flow components."""
+        super(AdditiveGradientFlow, self).__init__()
+        self.net = net
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+        ref_param = next(self.net.parameters())
+        dtype = ref_param.dtype
+        device = ref_param.device
+        D = torch.as_tensor(D, device=device, dtype=dtype)
+        if D.dim() == 0:
+            D = D * torch.eye(self.Ndim, dtype=dtype, device=device)
+        self.register_buffer("D", D)
 
     def forward(
         self,
         Xtrain,
         stoch=False,
     ):
-        """Evaluate additive model drift.
+        """Evaluate additive gradient-model drift.
 
         Parameters
         ----------
@@ -250,23 +328,117 @@ class AutonomousODEFlow(nn.Module):
         Returns
         -------
         drift : torch.Tensor of shape (batch_size, Ndim)
-            Additive-model drift field (when ``stoch=False``).
+            Additive gradient-model drift field (when ``stoch=False``).
         tuple : (drift, noise)
             When ``stoch=True``, returns drift and sampled additive noise term.
         """
-        xt = Xtrain[:, 0:self.Ndim].clone()
-        drift = self.net(xt)
+        with torch.enable_grad():
+            xt = Xtrain[:, 0:self.Ndim].clone()
+            xt.requires_grad_(True)
+            potential = self.evaluate_net(xt).squeeze(-1)
+            drift = torch.autograd.grad(
+                potential.sum(),
+                xt,
+                create_graph=self.training,
+            )[0]
 
         if stoch:
             drift_part = drift - self.lx * xt
-            noise = 0
+            noise = torch.einsum("mr,nr->nm", symsqrt(2.0 * self.D), torch.randn_like(xt))
             return drift_part, noise
-        
-            
-        return (drift - self.lx * xt)
+        with torch.no_grad():
+            score = self.score(Xtrain)
+        return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
 
 
-class ODEFlow(nn.Module):
+class NonAutonomousAdditiveGradientFlow(NonAutonomousFlowMixin, GenericFlowMixin, Flow):
+    """Non-autonomous additive-noise flow with gradient-based drift.
+
+    The potential network is evaluated on full time-augmented inputs
+    ``(x, t)``, but only the spatial gradient ``d/dx`` is used as drift.
+
+    Parameters
+    ----------
+    net : torch.nn.Module
+        Scalar potential network taking ``(batch_size, Ndim + 1)`` inputs and
+        returning either shape ``(batch_size,)`` or ``(batch_size, 1)``.
+    score : torch.nn.Module
+        Score model mapping ``(batch_size, Ndim + 1)`` to ``(batch_size, Ndim)``.
+    Ndim : int
+        State dimension.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    D : float or torch.Tensor, default=0.5
+        Diffusion coefficient/matrix used for score correction and stochastic
+        sampling.
+    """
+
+    def __init__(
+        self,
+        net,
+        score,
+        Ndim,
+        lx=1.0,
+        D=0.5,
+    ):
+        """Initialize non-autonomous additive gradient flow components."""
+        super(NonAutonomousAdditiveGradientFlow, self).__init__()
+        self.net = net
+        self.score = score
+        self.Ndim = Ndim
+        self.lx = lx
+        ref_param = next(self.net.parameters())
+        dtype = ref_param.dtype
+        device = ref_param.device
+        D = torch.as_tensor(D, device=device, dtype=dtype)
+        if D.dim() == 0:
+            D = D * torch.eye(self.Ndim, dtype=dtype, device=device)
+        self.register_buffer("D", D)
+
+    def forward(
+        self,
+        Xtrain,
+        stoch=False,
+    ):
+        """Evaluate non-autonomous additive gradient-model drift.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, return the stochastic drift part ``drift - lx*x``.
+            If ``False``, return the probability flow drift with score term.
+
+        Returns
+        -------
+        drift : torch.Tensor of shape (batch_size, Ndim)
+            Additive gradient-model drift field (when ``stoch=False``).
+        tuple : (drift, noise)
+            When ``stoch=True``, returns drift and sampled additive noise term.
+        """
+        with torch.enable_grad():
+            xt_full = Xtrain.clone()
+            xt_full.requires_grad_(True)
+            potential = self.evaluate_net(xt_full).squeeze(-1)
+            grad_full = torch.autograd.grad(
+                potential.sum(),
+                xt_full,
+                create_graph=self.training,
+            )[0]
+            drift = grad_full[:, : self.Ndim]
+            xt = xt_full[:, : self.Ndim]
+
+        if stoch:
+            drift_part = drift - self.lx * xt
+            noise = torch.einsum("mr,nr->nm", symsqrt(2.0 * self.D), torch.randn_like(xt))
+            return drift_part, noise
+        with torch.no_grad():
+            score = self.score(Xtrain)
+        return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
+
+    
+class ODEFlow(NonAutonomousFlowMixin, GenericFlowMixin, Flow):
     """Deterministic flow with drift network on full time-augmented inputs.
 
     Parameters
@@ -279,8 +451,6 @@ class ODEFlow(nn.Module):
         State dimension.
     lx : float, default=1.0
         Linear degradation coefficient.
-    D : float or torch.Tensor, default=1.0
-        Kept for API consistency with other flow classes.
     """
 
     def __init__(
@@ -297,31 +467,12 @@ class ODEFlow(nn.Module):
         self.Ndim = Ndim
         self.lx = lx
 
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
-
-        Returns
-        -------
-        self : ODEFlow
-            Estimator instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
-
     def forward(
         self,
         Xtrain,
         stoch=False,
     ):
-        """Evaluate additive model drift.
+        """Evaluate time-conditioned drift with linear degradation.
 
         Parameters
         ----------
@@ -329,27 +480,27 @@ class ODEFlow(nn.Module):
             Input states with time in the last column.
         stoch : bool, default=False
             If ``True``, return the stochastic drift part ``drift - lx*x``.
-            If ``False``, return the probability flow drift with score term.
+            If ``False``, return ``drift - lx*x``.
 
         Returns
         -------
         drift : torch.Tensor of shape (batch_size, Ndim)
-            Additive-model drift field (when ``stoch=False``).
+            Deterministic drift field (when ``stoch=False``).
         tuple : (drift, noise)
-            When ``stoch=True``, returns drift and sampled additive noise term.
+            When ``stoch=True``, returns drift and a zero-noise placeholder.
         """
         xt = Xtrain[:, :].clone()
-        drift = self.net(Xtrain)
+        drift = self.evaluate_net(Xtrain)
 
         if stoch:
-            drift_part = drift - self.lx * xt
+            drift_part = drift - self.lx * xt[:,:self.Ndim]
             noise = 0
             return drift_part, noise
         
-        return (drift - self.lx * xt)
+        return (drift - self.lx * xt[:,:self.Ndim])
     
     
-class AdditiveFlow(nn.Module):
+class AdditiveFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
     """Additive-noise flow with score-based probability-flow correction.
 
     Parameters
@@ -362,7 +513,7 @@ class AdditiveFlow(nn.Module):
         State dimension.
     lx : float, default=1.0
         Linear degradation coefficient.
-    D : float or torch.Tensor, default=1.0
+    D : float or torch.Tensor, default=0.5
         Diffusion coefficient/matrix used for score correction and stochastic
         sampling.
     """
@@ -373,7 +524,7 @@ class AdditiveFlow(nn.Module):
         score,
         Ndim,
         lx=1.0,
-        D=1.0,
+        D=0.5,
     ):
         """Initialize additive flow components."""
         super(AdditiveFlow, self).__init__()
@@ -381,26 +532,13 @@ class AdditiveFlow(nn.Module):
         self.score = score
         self.Ndim = Ndim
         self.lx = lx
-        self.D = D
-
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
-
-        Returns
-        -------
-        self : AdditiveFlow
-            Estimator instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
+        ref_param = next(self.net.parameters())
+        dtype = ref_param.dtype
+        device = ref_param.device
+        D = torch.as_tensor(D, device=device, dtype=dtype)
+        if D.dim() == 0:
+            D = D * torch.eye(self.Ndim, dtype=dtype, device=device)
+        self.register_buffer("D", D)
 
     def forward(
         self,
@@ -425,22 +563,20 @@ class AdditiveFlow(nn.Module):
             When ``stoch=True``, returns drift and sampled additive noise term.
         """
         xt = Xtrain[:, 0:self.Ndim].clone()
-        drift = self.net(xt)
+        drift = self.evaluate_net(xt)
 
         if stoch:
             drift_part = drift - self.lx * xt
-            noise = torch.einsum("mr,nr->nm", symsqrt(2.0*self.D), torch.randn_like(xt))
+            noise = torch.einsum("mr,nr->nm", symsqrt(2.0 * self.D), torch.randn_like(xt))
             return drift_part, noise
         
         with torch.no_grad():
             score = self.score(Xtrain)
             
-        return (drift - self.lx * xt) - torch.einsum(
-            "mr,nr->nm", self.D, score
-        )
+        return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
 
 
-class MultiplicativeFlow(nn.Module):
+class MultiplicativeFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
     """Multiplicative-noise flow model with autonomous drift and score correction."""
 
     def __init__(
@@ -456,25 +592,6 @@ class MultiplicativeFlow(nn.Module):
         self.score = score
         self.Ndim = Ndim
         self.lx = lx
-
-    def set_scales(self, mean, std):
-        """Set input normalization statistics on the drift network.
-
-        Parameters
-        ----------
-        mean : torch.Tensor
-            Feature-wise input mean.
-        std : torch.Tensor
-            Feature-wise input standard deviation.
-
-        Returns
-        -------
-        self : MultiplicativeFlow
-            Estimator instance.
-        """
-        if hasattr(self.net, "set_scales"):
-            self.net.set_scales(mean, std)
-        return self
 
     def forward(
         self,
@@ -500,17 +617,18 @@ class MultiplicativeFlow(nn.Module):
             noise term.
         """
         xt = Xtrain[:, 0:self.Ndim].clone()
-        drift = self.net(xt)
+        drift = self.evaluate_net(xt)
+        drift_part = drift - self.lx * xt
+
         if stoch:
-            drift_part = drift - self.lx * xt
-            noise = torch.sqrt(torch.relu(xt)) * torch.randn_like(xt)
+            noise = torch.sqrt(xt) * torch.randn_like(xt)
             return drift_part, noise
         
         with torch.no_grad():
             score = self.score(Xtrain)
 
         ones = torch.ones_like(xt)
-        return (drift - self.lx * xt) - 0.5 * ones - 0.5 * xt * score
+        return drift_part - 0.5 * ones - 0.5 * xt * score
 
 
 class OUScore(nn.Module):
@@ -540,9 +658,9 @@ class OUScore(nn.Module):
         super(OUScore, self).__init__()
         self.net = nn.Parameter(net)
         self.Ndim = m0.shape[0]
-        self.S0 = S0
-        self.m0 = m0
-        self.D = D
+        self.register_buffer("S0", S0)
+        self.register_buffer("m0", m0)
+        self.register_buffer("D", D)
 
     def forward(
         self,

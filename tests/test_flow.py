@@ -7,7 +7,7 @@ from pfi.flow.models import OUFlow, OUScore
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
-def test_fm_chebyshev_recovers_ou_b():
+def test_flow_OU():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dt = 0.01
@@ -40,7 +40,7 @@ def test_fm_chebyshev_recovers_ou_b():
 
     X = X_from_snapshots(samples_full, tt)
 
-    interp = ChebyshevInterpolant(device=device)
+    interp = ChebyshevInterpolant()
 
     B_ = torch.tensor(B, dtype=torch.float32, device=device)
     D_ = torch.tensor(D * np.eye(ndim), dtype=torch.float32, device=device)
@@ -58,7 +58,7 @@ def test_fm_chebyshev_recovers_ou_b():
     flow_reg = FlowModel(
         flow=flow_model,
         growth=None,
-        solver="fm",
+        solver="pfm",
         solver_kwargs=dict(interp=interp, n_epochs=5000, lr=1e-2),
         device=device,
     )

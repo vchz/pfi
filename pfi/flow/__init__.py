@@ -1,16 +1,20 @@
-"""Public flow APIs, models, interpolants, and external wrappers."""
+"""Public flow APIs, models, interpolants, couplings, and solvers."""
 
 from ._base import FlowModel
-from ._fm import FM_, interpolate_old2new
+from .solvers import PFM_, UFM_OT_, UFM_UOT_, UPFI_
 from . import models
 from . import interpolants
-from . import external
+from . import couplings
+from . import solvers
 
 __all__ = [
     "FlowModel",
-    "FM_",
-    "interpolate_old2new",
+    "PFM_",
+    "UFM_OT_",
+    "UFM_UOT_",
+    "UPFI_",
     "models",
     "interpolants",
-    "external",
+    "couplings",
+    "solvers",
 ]

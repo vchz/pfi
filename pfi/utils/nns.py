@@ -42,7 +42,46 @@ class BatchNorm(object):
         x_norm : torch.Tensor of shape (..., n_features)
             Normalized tensor.
         """
-        return (x - self.mean) / self.std
+        return (x - self.mean) / (self.std + 1e-5)
+
+
+class FeatureNorm(object):
+    """Per-sample feature normalizer ``(x - mean_features) / std_features``.
+
+    This normalization computes mean and standard deviation across the last
+    dimension (features/genes) for each sample independently.
+
+    Parameters
+    ----------
+    eps : float, default=1e-5
+        Positive stabilization constant added to standard deviation.
+    """
+
+    def __init__(
+        self,
+        eps=1e-5,
+    ):
+        self.eps = eps
+
+    def __call__(
+        self,
+        x,
+    ):
+        """Normalize an input tensor per sample over feature dimension.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape (..., n_features)
+            Input tensor.
+
+        Returns
+        -------
+        x_norm : torch.Tensor of shape (..., n_features)
+            Per-sample feature-normalized tensor.
+        """
+        mean = x.mean(dim=-1, keepdim=True)
+        std = x.std(dim=-1, keepdim=True, unbiased=False)
+        return (x - mean) / (std + self.eps)
 
 
 class LayerNoWN(nn.Module):
@@ -108,9 +147,10 @@ class DNN(nn.Module):
         Initial standard deviation used by the internal normalizer.
     seed : int, default=0
         Random seed for layer initialization.
-    activation : torch.nn.Module, default=torch.nn.Tanh()
+    activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
-
+    feature_norm : bool, default=False
+        If ``True``, apply per-sample ``FeatureNorm`` after ``BatchNorm``.
     """
 
     def __init__(
@@ -119,12 +159,15 @@ class DNN(nn.Module):
         mean=0,
         std=1,
         seed=0,
-        activation=nn.Tanh(),
+        activation=nn.ELU(),
+        feature_norm=False,
     ):
         super(DNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
+        self.feature_norm = feature_norm
         self.bn = BatchNorm(mean, std)
+        self.fn = FeatureNorm()
         layer = []
         for i in range(len(sizes) - 2):
             linear = LayerNoWN(sizes[i], sizes[i + 1], seed, activation)
@@ -166,7 +209,10 @@ class DNN(nn.Module):
         y : torch.Tensor of shape (..., sizes[-1])
             Network output.
         """
-        return self.net(self.bn(x))
+        if self.feature_norm:
+            x = self.fn(x)
+        x = self.bn(x)
+        return self.net(x)
 
 
 class SpectralNormDNN(nn.Module):
@@ -177,14 +223,15 @@ class SpectralNormDNN(nn.Module):
     sizes : list of int
         Layer sizes including input and output dimensions.
     mean : float or torch.Tensor, default=0
-        Initial mean used by the internal normalizer.
+        Unused placeholder kept for API consistency.
     std : float or torch.Tensor, default=1
-        Initial standard deviation used by the internal normalizer.
+        Unused placeholder kept for API consistency.
     seed : int, default=0
         Random seed for layer initialization.
-    activation : torch.nn.Module, default=torch.nn.Tanh()
+    activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
-
+    feature_norm : bool, default=False
+        If ``True``, apply per-sample ``FeatureNorm`` after ``BatchNorm``.
     """
 
     def __init__(
@@ -193,12 +240,15 @@ class SpectralNormDNN(nn.Module):
         mean=0,
         std=1,
         seed=0,
-        activation=nn.Tanh(),
+        activation=nn.ELU(),
+        feature_norm=False,
     ):
         super(SpectralNormDNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
+        self.feature_norm = feature_norm
         self.bn = BatchNorm(mean, std)
+        self.fn = FeatureNorm()
         layers = []
         for i in range(len(sizes) - 2):
             linear = nn.Linear(sizes[i], sizes[i + 1])
@@ -243,7 +293,10 @@ class SpectralNormDNN(nn.Module):
         y : torch.Tensor of shape (..., sizes[-1])
             Network output.
         """
-        return self.net(self.bn(x))
+        if self.feature_norm:
+            x = self.fn(x)
+        x = self.bn(x)
+        return self.net(x)
 
     
 class FastTensorDataLoader:
@@ -403,7 +456,7 @@ def divergence(
 
 
 def symsqrt(matrix):
-    """Compute the square root of a positive definite matrix."""
+    """Compute the square root of a positive definite matrix or scalar."""
     # perform the decomposition
     # s, v = matrix.symeig(eigenvectors=True)
     _, s, v = matrix.svd()  # passes torch.autograd.gradcheck()

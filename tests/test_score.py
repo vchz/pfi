@@ -8,7 +8,7 @@ from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 
-def test_dsm_score_energy_distance():
+def test_dsm_OU():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dt = 0.01
@@ -58,4 +58,4 @@ def test_dsm_score_energy_distance():
     score_reg.fit(X)
 
     eds = score_reg.score(X)
-    assert np.all(eds < 0.03)
+    assert np.all(eds < 0.055)

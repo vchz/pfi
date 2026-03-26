@@ -114,81 +114,66 @@ def simulate_ornstein_uhlenbeck(
 
 
 def simulate_toggle_switch(
-    nsamples,
-    init,
-    nsnaps,
-    ndim,
-    seed,
-    maxiter,
     model_params,
     vol,
     gr,
-    growth_flag=False,
+    nsamples,
+    ndim,
+    Dt,
+    K,
+    dt=0.01,
 ):
-    """Simulate stochastic toggle-switch dynamics with optional growth.
+    """Simulate snapshots from stochastic toggle-switch dynamics.
 
     Parameters
     ----------
-    nsamples : int
-        Initial number of particles.
-    init : ndarray of shape (ndim, nsamples)
-        Initial state matrix.
-    nsnaps : int
-        Number of snapshot times.
-    ndim : int
-        State dimension.
-    seed : int
-        Random seed.
-    maxiter : int
-        Number of discrete integration iterations.
     model_params : array-like of shape (7,)
         Toggle-switch parameters ``[a1, a2, b1, b2, k1, k2, n]``.
     vol : float
         System volume scaling the stochastic term.
     gr : float
-        Growth-rate scale used when ``growth_flag=True``.
-    growth_flag : bool, default=False
-        If ``True``, cells are duplicated according to growth probabilities.
+        Growth-rate scale. Growth is active only when ``gr > 0``.
+    nsamples : int
+        Number of particles sampled at the initial time.
+    ndim : int
+        State dimension.
+    Dt : float
+        Snapshot interval in simulation time.
+    K : int
+        Number of snapshots.
+    dt : float, default=0.01
+        Euler-Maruyama integration step.
 
     Returns
     -------
-    samples_full : list of length nsnaps
+    samples_full : list of length K
         ``samples_full[k]`` is an ndarray of shape ``(n_k, ndim)``, where
-        ``n_k`` can increase across snapshots when growth is enabled.
-    tt : ndarray of shape (nsnaps,)
+        ``n_k`` can increase across snapshots when growth is active.
+    tt : ndarray of shape (K,)
         Snapshot times.
     """
-    dt = 0.01
     lx = 1.0
-    np.random.seed(seed)
-
-    tt = np.zeros(nsnaps)
+    tt = np.zeros(K)
     samples_full = []
-    steps = int(maxiter / nsnaps)
+    record = int(Dt / dt)
 
-    for snap in range(nsnaps):
-        t_snap = snap * steps * dt
-        tt[snap] = t_snap
+    for j in range(1, K + 1):
+        traj = np.random.uniform(0.25, 0.75, (ndim, nsamples))
 
-        xold = init + 0.1 * np.random.normal(0, 1, (ndim, nsamples))
+        for _ in range(0, j * record):
+            fval = toggle_switch(traj.T, model_params).T
+            noise = np.sqrt(fval + lx * traj) * np.sqrt(dt) * np.random.normal(0, 1, traj.shape)
+            xnew = traj + dt * (fval - lx * traj) + (1 / np.sqrt(vol)) * noise
+            traj = np.where(xnew < 0, traj, xnew)
 
-        for _ in range(0, snap * steps + 1):
-            fval = toggle_switch(xold.T, model_params).T
-            noise = np.sqrt(fval + lx * xold) * np.sqrt(dt) * np.random.normal(0, 1, xold.shape)
-            xnew = xold + dt * (fval - lx * xold) + (1 / np.sqrt(vol)) * noise
-
-            xnew = np.where(xnew < 0, xold, xnew)
-            xold = xnew + 0.0
-
-            if growth_flag:
-                x1 = xold[0]
-                x2 = xold[1]
-                growth_probs = g_rate(x1, x2, gr) * dt
-                divide_flags = np.random.rand(x2.shape[0]) < growth_probs
-                new_cells = xold[:, divide_flags]
+            if gr > 0:
+                growth_probs = g_rate(traj[0], traj[1], gr) * dt
+                divide_flags = np.random.rand(traj.shape[1]) < growth_probs
+                new_cells = traj[:, divide_flags]
                 if new_cells.shape[1] > 0:
-                    xold = np.concatenate([xold, new_cells], axis=1)
+                    traj = np.concatenate([traj, new_cells], axis=1)
 
-        samples_full.append(xold.T.copy())
+        tt[j - 1] = j * Dt
+        samples_full.append(traj.T.copy())
 
     return samples_full, tt

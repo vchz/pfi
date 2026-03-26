@@ -1,9 +1,61 @@
 """Composite PFI estimator and Optuna helper."""
 
 import numpy as np
+import torch
 
 from .flow import FlowModel
 from .score import ScoreModel, freeze_dsm_score
+from .flow.models import (
+    CLEFlow,
+    ODEFlow,
+    AdditiveGradientFlow,
+    NonAutonomousAdditiveGradientFlow,
+)
+from .flow.interpolants import ChebyshevInterpolant, LinearInterpolant
+from .utils.nns import DNN, SpectralNormDNN
+from .score import geometric_sequence
+import torch.nn as nn
+
+
+DEFAULT_PFI_PARAMETERS = {
+    "f_solver": "pfm",
+    "s_solver": "dsm",
+    "f_model": CLEFlow,
+    "s_net": SpectralNormDNN,
+    "f_net": SpectralNormDNN,
+    "g_net": None,
+    "s_net_kwargs": {
+        "feature_norm": False,
+        "activation": nn.ELU(),
+    },
+    "f_net_kwargs": {
+        "feature_norm": True,
+        "activation": nn.ELU(),
+    },
+    "s_width": 128,
+    "f_width": 128,
+    "s_depth": 4,
+    "f_depth": 3,
+    "s_noise_lvl": 0.01,
+    "s_solver_kwargs": {
+        "L": 5,
+        "adp_flag": 0,
+    },
+    "f_solver_kwargs": {    
+        "fac": 4,
+        "nb": 1,
+        "interp": LinearInterpolant(),
+        "bs": 512,
+    },
+    "f_model_kwargs": {
+        "lx": 0.3,
+    },
+    "s_lr": 5e-4,
+    "f_lr": 1e-3,
+    "s_n_epochs": 4000,
+    "f_n_epochs": 1500,
+    "fit_on_score_samples": False,
+}
 
 
 class PFI:
@@ -131,16 +183,213 @@ class PFI:
         return self.flow_estimator.score(X, y, stoch=stoch, dt=dt)
 
 
-def hyperopt_pfi(
-    X,
-    fit_on_score_samples=True,
-    n_trials=50,
-    L=5,
-    fac=2,
-    nb=1,
+def _resolve_pfi_params(params):
+    """Build a resolved parameter dictionary from defaults and overrides."""
+    resolved = dict(DEFAULT_PFI_PARAMETERS)
+    if params is not None:
+        resolved.update(params)
+    return resolved
+
+
+def make_score_estimator(
+    ndim,
+    params=None,
     device="cpu",
     seed=0,
     verbose=True,
+):
+    """Create a configured ``ScoreModel`` from PFI-style parameters.
+
+    Parameters
+    ----------
+    ndim : int
+        State-space dimension.
+    params : dict or None, default=None
+        Parameter overrides. If ``None``, ``DEFAULT_PFI_PARAMETERS`` is used.
+    device : str or torch.device, default='cpu'
+        Device used by the score estimator.
+    seed : int, default=0
+        Seed forwarded to neural network constructors.
+    verbose : bool, default=True
+        Verbosity flag forwarded to the score solver.
+
+    Returns
+    -------
+    score_estimator : ScoreModel
+        Configured score estimator.
+    """
+    resolved = _resolve_pfi_params(params)
+    s_net = resolved["s_net"]
+    if not isinstance(s_net, type):
+        raise TypeError("s_net must be a network class.")
+    s_net_kwargs = dict(resolved["s_net_kwargs"])
+
+    s_width = int(resolved["s_width"])
+    s_depth = int(resolved["s_depth"])
+
+    if resolved["s_solver"] == 'dsm':
+        score_sizes = [ndim + 2] + [s_width] * s_depth + [ndim]
+    else:
+        score_sizes = [ndim + 1] + [s_width] * s_depth + [ndim]
+    score_net = s_net(score_sizes, seed=seed, **s_net_kwargs)
+
+    score_noise_lvl = float(resolved["s_noise_lvl"])
+    score_solver_kwargs = dict(resolved["s_solver_kwargs"])
+    score_solver_kwargs.update({
+        "n_epochs": int(resolved["s_n_epochs"]),
+        "lr": float(resolved["s_lr"]),
+        "verbose": verbose,
+    })
+
+    return ScoreModel(
+        model=score_net,
+        solver=resolved["s_solver"],
+        solver_kwargs=score_solver_kwargs,
+        noise_lvl=score_noise_lvl,
+        device=device,
+    )
+
+
+def make_flow_estimator(
+    ndim,
+    params=None,
+    device="cpu",
+    seed=0,
+    verbose=True,
+    score=None,
+):
+    """Create a configured ``FlowModel`` from PFI-style parameters.
+
+    Parameters
+    ----------
+    ndim : int
+        State-space dimension.
+    params : dict or None, default=None
+        Parameter overrides. If ``None``, ``DEFAULT_PFI_PARAMETERS`` is used.
+    device : str or torch.device, default='cpu'
+        Device used by the flow estimator.
+    seed : int, default=0
+        Seed forwarded to neural network constructors.
+    verbose : bool, default=True
+        Verbosity flag forwarded to the flow solver.
+    score : callable or None, default=None
+        Score function passed directly to the instantiated flow model.
+
+    Returns
+    -------
+    flow_estimator : FlowModel
+        Configured flow estimator.
+    """
+    resolved = _resolve_pfi_params(params)
+    f_net = resolved["f_net"]
+    if not isinstance(f_net, type):
+        raise TypeError("f_net must be a network class.")
+    f_net_kwargs = dict(resolved["f_net_kwargs"])
+    f_model = resolved["f_model"]
+    if not isinstance(f_model, type):
+        raise TypeError("f_model must be a flow model class.")
+    g_net = resolved.get("g_net", None)
+    if g_net is not None and not isinstance(g_net, type):
+        raise TypeError("g_net must be a network class or None.")
+    
+    f_width = int(resolved["f_width"])
+    f_depth = int(resolved["f_depth"])
+
+    if issubclass(f_model, ODEFlow):
+        flow_sizes = [ndim + 1] + [f_width] * f_depth + [ndim]
+    elif issubclass(f_model, NonAutonomousAdditiveGradientFlow):
+        flow_sizes = [ndim + 1] + [f_width] * f_depth + [1]
+    elif issubclass(f_model, AdditiveGradientFlow):
+        flow_sizes = [ndim] + [f_width] * f_depth + [1]
+    else:
+        flow_sizes = [ndim] + [f_width] * f_depth + [ndim]
+
+    force_net = f_net(flow_sizes, seed=seed, **f_net_kwargs)
+    growth_net = None
+    if g_net is not None:
+        growth_sizes = [ndim] + [f_width] * f_depth + [1]
+        growth_net = g_net(growth_sizes, seed=seed, **f_net_kwargs)
+
+    flow_kwargs = {
+        "net": force_net,
+        "score": score,
+        "Ndim": ndim,
+    }
+    flow_kwargs.update(dict(resolved["f_model_kwargs"]))
+    flow_model = f_model(**flow_kwargs)
+
+    flow_solver_kwargs = dict(resolved["f_solver_kwargs"])
+    flow_solver_kwargs.update({
+        "n_epochs": int(resolved["f_n_epochs"]),
+        "lr": float(resolved["f_lr"]),
+        "verbose": verbose,
+    })
+
+    return FlowModel(
+        flow=flow_model,
+        growth=growth_net,
+        solver=resolved["f_solver"],
+        solver_kwargs=flow_solver_kwargs,
+        device=device,
+    )
+
+
+def make_pfi_estimator(
+    ndim,
+    params=None,
+    device="cpu",
+    seed=0,
+    verbose=True,
+):
+    """Create a configured ``PFI`` estimator from a set of parameters.
+
+    Parameters
+    ----------
+    ndim : int
+        State-space dimension.
+    params : dict or None, default=None
+        Parameter overrides. When ``None``, defaults from
+        ``DEFAULT_PFI_PARAMETERS`` are used.
+    device : str or torch.device, default='cpu'
+        Device used by score and flow estimators.
+    seed : int, default=0
+        Seed forwarded to neural network constructors.
+
+    Returns
+    -------
+    est : PFI or tuple
+        Configured composite estimator, or ``(score_estimator, flow_estimator)``
+        when ``by_parts=True``.
+    """
+    resolved = _resolve_pfi_params(params)
+    score_estimator = make_score_estimator(
+        ndim=ndim,
+        params=resolved,
+        device=device,
+        seed=seed,
+        verbose=verbose,
+    )
+    flow_estimator = make_flow_estimator(
+        ndim=ndim,
+        params=resolved,
+        device=device,
+        seed=seed,
+        verbose=verbose,
+    )
+
+    return PFI(
+        score_estimator=score_estimator,
+        flow_estimator=flow_estimator,
+        fit_on_score_samples=bool(resolved["fit_on_score_samples"]),
+    )
+
+
+def hyperopt_pfi(
+    X,
+    n_trials=50,
+    search_space=None,
+    device="cpu",
+    seed=0,
 ):
     """Run Optuna multi-objective optimization for the composite PFI estimator.
 
@@ -148,16 +397,11 @@ def hyperopt_pfi(
     ----------
     X : ndarray of shape (n_samples, ndim + 1)
         Time-augmented training data.
-    fit_on_score_samples : bool, default=True
-        Passed to ``PFI`` constructor.
     n_trials : int, default=50
         Number of Optuna trials.
-    L : int, default=5
-        Number of DSM noise levels used in score training.
-    fac : int, default=2
-        Temporal upsampling factor used in flow matching.
-    nb : int, default=1
-        Number of mini-batches used for OT stitching in flow matching.
+    search_space : dict or None, default=None
+        Optional Optuna search-space override. Keys match trial parameter names
+        and values are Optuna ``BaseDistribution`` objects.
     device : str or torch.device, default='cpu'
         Device used by estimators.
     seed : int, default=0
@@ -172,70 +416,69 @@ def hyperopt_pfi(
         using only source cells at ``t0``.
     """
     import optuna
-    import torch.nn as nn
-
-    from .flow.models import CLEFlow
-    from .flow.interpolants import ChebyshevInterpolant
-    from .utils.nns import DNN, SpectralNormDNN
-    from .score import geometric_sequence
+    from optuna.distributions import (
+        CategoricalDistribution,
+        FloatDistribution,
+        IntDistribution,
+    )
 
     optuna.logging.set_verbosity(optuna.logging.INFO)
     ndim = X.shape[1] - 1
+    default_L = DEFAULT_PFI_PARAMETERS["s_solver_kwargs"]["L"]
+    min_sigma = float(np.min(geometric_sequence(default_L)))
+
+    # Spectral Norm DNNs are much more stable
+    default_search_space = {
+        "f_solver": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_solver"]]),
+        "s_solver": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["s_solver"]]),
+        "f_model": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_model"]]),
+        "s_net": CategoricalDistribution([SpectralNormDNN]),
+        "f_net": CategoricalDistribution([SpectralNormDNN]),
+        "s_width": CategoricalDistribution([64, 128, 264]),
+        "f_width": CategoricalDistribution([64, 128, 264]),
+        "s_depth": IntDistribution(2, 5, step=1),
+        "f_depth": IntDistribution(2, 5, step=1),
+        "s_noise_lvl": FloatDistribution(min_sigma, 0.6),
+        "s_lr": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["s_lr"]]),
+        "f_lr": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_lr"]]),
+        "s_n_epochs": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["s_n_epochs"]]),
+        "f_n_epochs": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_n_epochs"]]),
+        "fit_on_score_samples": CategoricalDistribution([True]),
+        "f_model_kwargs": {
+            "lx": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_model_kwargs"]["lx"]]),
+        },
+        "s_solver_kwargs": {
+            "L": CategoricalDistribution([default_L]),
+        },
+        "f_solver_kwargs": {
+            "fac": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_solver_kwargs"]["fac"]]),
+            "nb": CategoricalDistribution([DEFAULT_PFI_PARAMETERS["f_solver_kwargs"]["nb"]]),
+            "interp": CategoricalDistribution([ChebyshevInterpolant()]),
+        },
+    }
+    if search_space is not None:
+        default_search_space.update(search_space)
 
     def objective(trial):
-        snet = trial.suggest_categorical("snet", ["dnn", "spectral"])
-        fnet = trial.suggest_categorical("fnet", ["dnn", "spectral"])
-        score_cls = DNN if snet == "dnn" else SpectralNormDNN
-        flow_cls = DNN if fnet == "dnn" else SpectralNormDNN
+        nested_params = {}
+        for name, dist in default_search_space.items():
+            if isinstance(dist, dict):
+                nested_params[name] = {}
+                for subname, subdist in dist.items():
+                    pname = f"{name}.{subname}"
+                    pvalue = trial._suggest(pname, subdist)
+                    nested_params[name][subname] = pvalue
+            else:
+                pvalue = trial._suggest(name, dist)
+                nested_params[name] = pvalue
 
-        sw = trial.suggest_categorical("sw", [64, 128])
-        fw = trial.suggest_categorical("fw", [64, 128])
-        sd = trial.suggest_int("sd", 2, 5, step=1)
-        fd = trial.suggest_int("fd", 2, 5, step=1)
-
-        min_sigma = np.min(geometric_sequence(L))
-        nl = trial.suggest_float("nl", min_sigma, 0.6)
-        lx = trial.suggest_float("lx", 0.4, 1.5, step=0.1)
-
-        score_sizes = [ndim + 2] + [sw] * sd + [ndim]
-        flow_sizes = [ndim] + [fw] * fd + [ndim]
-
-        score_net = score_cls(score_sizes, activation=nn.ELU(), seed=seed)
-        force_net = flow_cls(flow_sizes, activation=nn.ELU(), seed=seed)
-        flow_model = CLEFlow(net=force_net, score=None, Ndim=ndim, lx=lx)
-
-        score_estimator = ScoreModel(
-            model=score_net,
-            solver="dsm",
-            solver_kwargs={
-                "L": L,
-                "n_epochs": 5000,
-                "lr": 1e-3,
-                "bs": None,
-                "adp_flag": 1,
-                "verbose": False,
-            },
-            noise_lvl=nl,
+        trial.set_user_attr("pfi_params", nested_params)
+        est = make_pfi_estimator(
+            params=nested_params,
+            ndim=ndim,
             device=device,
-        )
-        flow_estimator = FlowModel(
-            flow=flow_model,
-            growth=None,
-            solver="fm",
-            solver_kwargs={
-                "interp": ChebyshevInterpolant(device=device),
-                "nb": nb,
-                "fac": fac,
-                "n_epochs": 4000,
-                "lr": 1e-3,
-                "verbose": False
-            },
-            device=device,
-        )
-        est = PFI(
-            score_estimator=score_estimator,
-            flow_estimator=flow_estimator,
-            fit_on_score_samples=fit_on_score_samples,
+            seed=seed,
+            verbose=False,
         )
         est.fit(X)
 

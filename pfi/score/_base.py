@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from ._dsm import DSM_, generate_data_DSM
+from .solvers import DSM_, generate_data_DSM
 from ..utils.data import snapshots_from_X
 
 
@@ -46,7 +46,7 @@ class ScoreModel:
         model,
         solver="dsm",
         solver_kwargs=None,
-        noise_lvl=0,
+        noise_lvl=0.0,
         device="cpu",
     ):
         """Initialize the score estimator wrapper.
@@ -91,6 +91,8 @@ class ScoreModel:
             Fitted estimator.
         """
         dist, times = snapshots_from_X(X)
+        dist = [d.to(device=self.device, dtype=torch.float32) for d in dist]
+        times = times.to(device=self.device, dtype=torch.float32)
 
         self.Ndim_ = X.shape[1] - 1
         self.model = self.model.to(self.device)
@@ -101,7 +103,6 @@ class ScoreModel:
                 dist,
                 times,
                 self.model,
-                device=self.device,
                 **self.solver_kwargs,
             )
             self.loss_ = np.asarray(loss_hist)
@@ -128,10 +129,11 @@ class ScoreModel:
         score : ndarray of shape (n_samples, ndim)
             Predicted score vectors.
         """
-        X = torch.tensor(X, dtype=torch.float32, device=self.device)
+        X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         sigma_value = self.noise_lvl_
         sigma_col = torch.full((X.shape[0], 1), sigma_value, dtype=torch.float32, device=self.device)
         X_in = torch.cat([X[:, : self.Ndim_], sigma_col, X[:, -1:]], dim=1)
+        
         with torch.no_grad():
             score = self.model_(X_in)
 
@@ -158,29 +160,31 @@ class ScoreModel:
         gen : ndarray of shape (nsamples, ndim + 1)
             Generated samples with time in the last column.
         """
-        X = torch.tensor(X, 
-                         dtype=torch.float32, 
-                         device=self.device)
+        X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         
         if nsamples is None:
             nsamples = X.shape[0]
 
         if self.solver == "dsm":
-
-            init_ = 4*torch.rand((nsamples,self.Ndim_+2)) + 1
-            init_[:,0:self.Ndim_] = X[:,0:self.Ndim_]
+            init_ = torch.zeros(
+                (nsamples, self.Ndim_ + 2),
+                dtype=torch.float32,
+                device=self.device,
+            )
+            init_[:, 0 : self.Ndim_] = X[:, 0 : self.Ndim_] + 0.1 * torch.randn(
+                (nsamples, self.Ndim_),
+                dtype=torch.float32,
+                device=self.device,
+            )
             time_ = X[:, -1]
             target_noise = self.noise_lvl_
             with torch.no_grad():
                 gen = generate_data_DSM(
                     maxiter=maxiter,
-                    infNet=self.model,
-                    nsamples=nsamples,
+                    infNet=self.model_,
                     init_=init_,
                     time_=time_,
                     L=self.solver_kwargs["L"],
-                    ndim=self.Ndim_,
-                    device=self.device,
                     noise_lvl=target_noise,
                 )
             gen_xt = torch.cat(
@@ -214,9 +218,7 @@ class ScoreModel:
         """
         import geomloss
 
-        X = torch.tensor(X, 
-                         dtype=torch.float32, 
-                         device=self.device)
+        X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         times = torch.unique(X[:, -1])
         scores = []
 
@@ -229,10 +231,10 @@ class ScoreModel:
                     nsamples=x_t.shape[0],
                     maxiter=maxiter,
                 )
-                y_t = x_t[:, : self.Ndim_]
+                y_t = x_t[:, : self.Ndim_].contiguous()
                 ed = loss(
-                    torch.tensor(gen[:, : self.Ndim_], dtype=torch.float32, device=self.device),
-                    torch.tensor(y_t, dtype=torch.float32, device=self.device),
+                    torch.as_tensor(gen[:, : self.Ndim_], dtype=torch.float32, device=self.device).contiguous(),
+                    y_t,
                 ).item()
                 scores.append(ed)
 
