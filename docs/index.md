@@ -74,7 +74,7 @@ params = {
     "f_model_kwargs": {"lx": 0.3},
     "s_net": SpectralNormDNN,
     "f_net": SpectralNormDNN,
-    "g_net": DNN,
+    "g_net": None,
     "s_net_kwargs": {"activation": nn.ELU(), "feature_norm": False},
     "f_net_kwargs": {"activation": nn.ELU(), "feature_norm": True},
     "s_width": 128,
