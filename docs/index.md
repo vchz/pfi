@@ -37,9 +37,7 @@ X = X_from_snapshots(snaps, times)
 - aliases `"natcomm"` or `"kaggle"`
 
 For aliases, data is fetched from the package Zenodo repository:
-[https://doi.org/10.5281/zenodo.19237707](https://doi.org/10.5281/zenodo.19237707)
-
-Downloaded files are cached in `pfi.utils.data.PFI_DATA_FOLDER` (default `~/pfi_data`).
+[https://doi.org/10.5281/zenodo.19237707](https://doi.org/10.5281/zenodo.19237707) and downloaded files are cached in `pfi.utils.data.PFI_DATA_FOLDER` (default `~/pfi_data`).
 
 ### Using a composite estimator
 
@@ -97,10 +95,8 @@ If you specify any parameter when building the estimator, it will update this di
 
 ### Quick note on the solvers
 
-Score solvers:
+There is only one score solver for now: `dsm`, which impleements denoising score matching, as introduced in [https://doi.org/10.48550/arXiv.1907.05600](https://doi.org/10.48550/arXiv.1907.05600) and [https://doi.org/10.1162/NECO_a_00142](https://doi.org/10.1162/NECO_a_00142).
 
-- `dsm`: denoising score matching
-- `ssm`: reserved, not implemented yet
 
 Flow solvers:
 
