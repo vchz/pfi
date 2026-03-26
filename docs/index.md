@@ -37,7 +37,7 @@ X = X_from_snapshots(snaps, times)
 - aliases `"natcomm"` or `"kaggle"`
 
 For aliases, data is fetched from the package Zenodo repository:
-https://doi.org/10.5281/zenodo.19237707
+[https://doi.org/10.5281/zenodo.19237707](https://doi.org/10.5281/zenodo.19237707)
 
 Downloaded files are cached in `pfi.utils.data.PFI_DATA_FOLDER` (default `~/pfi_data`).
 
@@ -61,8 +61,7 @@ pfi_est = make_pfi_estimator(
 pfi_est.fit(X)
 ```
 
-You can customize networks, flow model, solvers, and solver kwargs via `params`.
-Typical example:
+You can customize networks, flow model, solvers, and solver kwargs via `params`. The default params are in `pfi.flow.DEFAULT_PFI_PARAMETERS`. Typical example:
 
 ```python
 import torch.nn as nn
@@ -94,6 +93,7 @@ params = {
     "fit_on_score_samples": False,
 }
 ```
+If you specify any parameter when building the estimator, it will update this dictionnary, except for any nested dictionnary which is replaced with the user chosen values.
 
 ### Quick note on the solvers
 
@@ -104,7 +104,7 @@ Score solvers:
 
 Flow solvers:
 
-- `upfi`: UPFI/PFI-style formulation (see https://doi.org/10.48550/arXiv.2505.13197 and https://doi.org/10.1073/pnas.2420621122)
+- `upfi`: UPFI/PFI-style formulation (see [https://doi.org/10.48550/arXiv.2505.13197](https://doi.org/10.48550/arXiv.2505.13197) and [https://doi.org/10.1073/pnas.2420621122](https://doi.org/10.1073/pnas.2420621122))
 - `pfm`: unbalanced flow matching used in this package (publication in preparation)
 - `external.*`: wrappers for external methods used for benchmarking (currently `external.deepruotv2`)
 - `future.*`: experimental approaches not fully tested (currently `future.ufm_uot`, `future.ufm_ot`)
@@ -116,10 +116,10 @@ It is available and usable, but not yet fully validated across all solver/model 
 
 ## Low level usage
 
-If you do not use `make_pfi_estimator`, the expected order is:
+If you do not use `make_pfi_estimator` because you want to check first the quality of the score for instance, the expected order is:
 
 - fit a `ScoreModel`
-- freeze the fitted score when using `dsm`
+- freeze the fitted score at a given noise level when using `dsm`
 - instantiate and fit a `FlowModel` that uses that frozen score
 
 Example:
@@ -154,14 +154,16 @@ flow_reg = FlowModel(
 flow_reg.fit(X)
 ```
 
-Behavior summary:
+Importantly, this package is modular which means that you can try a variety of different models, gradient, CLE, autonomous, additive noise. All these models are detailed in [API Reference](api/pfi/flow/models.md)
+
+In the spirit of sklearn, the FlowModel and ScoreModel implement different other methods:
 
 - `ScoreModel.sample(X)` generates samples at the snapshot times of `X`.
 - `ScoreModel.score(X)` returns per-time energy distances between generated and observed samples.
-- `FlowModel.sample(X0, Dt, dt, stoch, pos)` simulates trajectories from initial states `X0`.
+- `FlowModel.sample(X0, Dt, dt, stoch, pos)` simulates trajectories from initial states `X0`. If `stoch` is `True` it simulates stochastic trajectories with Euler-Maruyama. Otherwise it simulates the probability flow trajectories.
 - `FlowModel.score(X, Y, ...)` pushes each source time in `X` to the next strictly later time in `Y` and computes energy-distance errors.
 
 For full API details and runnable notebooks, use:
 
-- API docs under `docs/api/`
-- examples under `https://github.com/vchz/pfi/tree/main/examples`
+- API docs under [API Reference](api/summary.md)
+- examples under [https://github.com/vchz/pfi/tree/main/examples](https://github.com/vchz/pfi/tree/main/examples)

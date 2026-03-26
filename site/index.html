@@ -1452,7 +1452,7 @@
 <li>aliases <code>"natcomm"</code> or <code>"kaggle"</code></li>
 </ul>
 <p>For aliases, data is fetched from the package Zenodo repository:
-https://doi.org/10.5281/zenodo.19237707</p>
+<a href="https://doi.org/10.5281/zenodo.19237707">https://doi.org/10.5281/zenodo.19237707</a></p>
 <p>Downloaded files are cached in <code>pfi.utils.data.PFI_DATA_FOLDER</code> (default <code>~/pfi_data</code>).</p>
 <h3 id="using-a-composite-estimator">Using a composite estimator</h3>
 <p>Use <code>make_pfi_estimator</code> for the standard pipeline (fit score, then fit flow):</p>
@@ -1470,9 +1470,8 @@ https://doi.org/10.5281/zenodo.19237707</p>
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
 </span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">pfi_est</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
-<p>You can customize networks, flow model, solvers, and solver kwargs via <code>params</code>.
-Typical example:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<p>You can customize networks, flow model, solvers, and solver kwargs via <code>params</code>. The default params are in <code>pfi.flow.DEFAULT_PFI_PARAMETERS</code>. Typical example:</p>
+<p><div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.utils.nns</span><span class="w"> </span><span class="kn">import</span> <span class="n">DNN</span><span class="p">,</span> <span class="n">SpectralNormDNN</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CLEFlow</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pfi.flow.interpolants</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearInterpolant</span>
@@ -1501,6 +1500,7 @@ Typical example:</p>
 </span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    <span class="s2">&quot;fit_on_score_samples&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
 </span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="p">}</span>
 </span></code></pre></div>
+If you specify any parameter when building the estimator, it will update this dictionnary, except for any nested dictionnary which is replaced with the user chosen values.</p>
 <h3 id="quick-note-on-the-solvers">Quick note on the solvers</h3>
 <p>Score solvers:</p>
 <ul>
@@ -1509,7 +1509,7 @@ Typical example:</p>
 </ul>
 <p>Flow solvers:</p>
 <ul>
-<li><code>upfi</code>: UPFI/PFI-style formulation (see https://doi.org/10.48550/arXiv.2505.13197 and https://doi.org/10.1073/pnas.2420621122)</li>
+<li><code>upfi</code>: UPFI/PFI-style formulation (see <a href="https://doi.org/10.48550/arXiv.2505.13197">https://doi.org/10.48550/arXiv.2505.13197</a> and <a href="https://doi.org/10.1073/pnas.2420621122">https://doi.org/10.1073/pnas.2420621122</a>)</li>
 <li><code>pfm</code>: unbalanced flow matching used in this package (publication in preparation)</li>
 <li><code>external.*</code>: wrappers for external methods used for benchmarking (currently <code>external.deepruotv2</code>)</li>
 <li><code>future.*</code>: experimental approaches not fully tested (currently <code>future.ufm_uot</code>, <code>future.ufm_ot</code>)</li>
@@ -1518,10 +1518,10 @@ Typical example:</p>
 <p><code>hyperopt_pfi(X, n_trials, search_space, ...)</code> runs Optuna-based multi-objective tuning for score and flow objectives.<br />
 It is available and usable, but not yet fully validated across all solver/model combinations.</p>
 <h2 id="low-level-usage">Low level usage</h2>
-<p>If you do not use <code>make_pfi_estimator</code>, the expected order is:</p>
+<p>If you do not use <code>make_pfi_estimator</code> because you want to check first the quality of the score for instance, the expected order is:</p>
 <ul>
 <li>fit a <code>ScoreModel</code></li>
-<li>freeze the fitted score when using <code>dsm</code></li>
+<li>freeze the fitted score at a given noise level when using <code>dsm</code></li>
 <li>instantiate and fit a <code>FlowModel</code> that uses that frozen score</li>
 </ul>
 <p>Example:</p>
@@ -1553,17 +1553,18 @@ It is available and usable, but not yet fully validated across all solver/model 
 </span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="p">)</span>
 </span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="n">flow_reg</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
 </span></code></pre></div>
-<p>Behavior summary:</p>
+<p>Importantly, this package is modular which means that you can try a variety of different models, gradient, CLE, autonomous, additive noise. All these models are detailed in <a href="api/pfi/flow/models/">API Reference</a></p>
+<p>In the spirit of sklearn, the FlowModel and ScoreModel implement different other methods:</p>
 <ul>
 <li><code>ScoreModel.sample(X)</code> generates samples at the snapshot times of <code>X</code>.</li>
 <li><code>ScoreModel.score(X)</code> returns per-time energy distances between generated and observed samples.</li>
-<li><code>FlowModel.sample(X0, Dt, dt, stoch, pos)</code> simulates trajectories from initial states <code>X0</code>.</li>
+<li><code>FlowModel.sample(X0, Dt, dt, stoch, pos)</code> simulates trajectories from initial states <code>X0</code>. If <code>stoch</code> is <code>True</code> it simulates stochastic trajectories with Euler-Maruyama. Otherwise it simulates the probability flow trajectories.</li>
 <li><code>FlowModel.score(X, Y, ...)</code> pushes each source time in <code>X</code> to the next strictly later time in <code>Y</code> and computes energy-distance errors.</li>
 </ul>
 <p>For full API details and runnable notebooks, use:</p>
 <ul>
-<li>API docs under <code>docs/api/</code></li>
-<li>examples under <code>https://github.com/vchz/pfi/tree/main/examples</code></li>
+<li>API docs under <a href="api/summary/">API Reference</a></li>
+<li>examples under <a href="https://github.com/vchz/pfi/tree/main/examples">https://github.com/vchz/pfi/tree/main/examples</a></li>
 </ul>
 
 
