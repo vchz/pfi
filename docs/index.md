@@ -59,7 +59,7 @@ pfi_est = make_pfi_estimator(
 pfi_est.fit(X)
 ```
 
-You can customize networks, flow model, solvers, and solver kwargs via `params`. The default params are in `pfi.flow.DEFAULT_PFI_PARAMETERS`. Typical example:
+You can customize networks, flow model, solvers, and solver kwargs via `params`. The default params are in `pfi.DEFAULT_PFI_PARAMETERS`. Typical example:
 
 ```python
 import torch.nn as nn
