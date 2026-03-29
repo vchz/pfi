@@ -191,7 +191,7 @@ def PFM_(
 
     optimizer = torch.optim.Adam(params)
     scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
-    default_sched = {"milestones": [1000, 2500, 5000], "gamma": 0.1}
+    default_sched = {"milestones": [1000, 1500, 5000], "gamma": 0.1}
     default_sched.update(scheduler_kwargs)
     scheduler_ = torch.optim.lr_scheduler.MultiStepLR(optimizer, **default_sched)
 

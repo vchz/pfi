@@ -53,7 +53,7 @@ DEFAULT_PFI_PARAMETERS = {
     "s_lr": 5e-4,
     "f_lr": 1e-3,
     "s_n_epochs": 4000,
-    "f_n_epochs": 1500,
+    "f_n_epochs": 2000,
     "fit_on_score_samples": False,
 }
 

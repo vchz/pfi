@@ -15,8 +15,24 @@ class Flow(nn.Module, ABC):
         """Set normalization statistics on the underlying network."""
 
     @abstractmethod
+    def is_autonomous(self):
+        """Return whether the model drift network is autonomous."""
+
+    @abstractmethod
+    def _set_dim(self, x):
+        """Select network input coordinates from the full model state."""
+
+    @abstractmethod
+    def _set_sign(self, out):
+        """Apply an optional sign/output transform to network outputs."""
+
     def evaluate_net(self, x):
-        """Evaluate the underlying drift network."""
+        """Evaluate the underlying drift network with model-specific transforms."""
+        return self._set_sign(self.net(self._set_dim(x)))
+
+    def is_gradient(self):
+        """Return whether drift is defined via a potential gradient."""
+        return False
 
 
 class AutonomousFlowMixin:
@@ -27,6 +43,15 @@ class AutonomousFlowMixin:
             self.net.set_scales(mean[: self.Ndim], std[: self.Ndim])
         return self
 
+    def is_autonomous(self):
+        return True
+
+    def _set_dim(self, x):
+        return x[:, : self.Ndim]
+
+    def _set_sign(self, out):
+        return out
+
 
 class NonAutonomousFlowMixin:
     """Scale handling for non-autonomous models (all input dimensions)."""
@@ -36,22 +61,42 @@ class NonAutonomousFlowMixin:
             self.net.set_scales(mean, std)
         return self
 
+    def is_autonomous(self):
+        return False
+
+    def _set_dim(self, x):
+        return x
+
+    def _set_sign(self, out):
+        return out
+
 
 class PositiveFlowMixin:
     """Positive drift evaluation mixin."""
 
+    def _set_sign(self, out):
+        return torch.relu(out)
+
+
+class GradientFlowMixin:
+    """Gradient-based drift evaluation mixin."""
+
     def evaluate_net(self, x):
-        return torch.relu(self.net(x))
+        potential = self.net(self._set_dim(x)).squeeze(-1)
+        grad = torch.autograd.grad(
+            potential.sum(),
+            x,
+            create_graph=self.training,
+        )[0]
+        if grad.shape[1] > self.Ndim:
+            grad = grad[:, : self.Ndim]
+        return self._set_sign(grad)
+
+    def is_gradient(self):
+        return True
 
 
-class GenericFlowMixin:
-    """Unconstrained drift evaluation mixin."""
-
-    def evaluate_net(self, x):
-        return self.net(x)
-
-
-class CLEFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class CLEFlow(AutonomousFlowMixin, Flow):
     """Chemical-Langevin-inspired flow model.
 
     Parameters
@@ -139,7 +184,7 @@ class PositiveCLEFlow(PositiveFlowMixin, CLEFlow):
     pass
 
 
-class OUFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class OUFlow(AutonomousFlowMixin, Flow):
     """Ornstein-Uhlenbeck flow model using an external score function.
 
     Parameters
@@ -202,7 +247,7 @@ class OUFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
         return drift - torch.einsum("mr,nr->nm", self.D, score)
 
 
-class AutonomousODEFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class AutonomousODEFlow(AutonomousFlowMixin, Flow):
     """Autonomous deterministic flow with linear degradation.
 
     Parameters
@@ -265,7 +310,7 @@ class AutonomousODEFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
         return (drift - self.lx * xt)
 
 
-class AdditiveGradientFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class AdditiveGradientFlow(AutonomousFlowMixin, GradientFlowMixin, Flow):
     """Additive-noise flow with gradient-based drift.
 
     The drift is defined as the gradient of a scalar potential network and
@@ -335,12 +380,7 @@ class AdditiveGradientFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
         with torch.enable_grad():
             xt = Xtrain[:, 0:self.Ndim].clone()
             xt.requires_grad_(True)
-            potential = self.evaluate_net(xt).squeeze(-1)
-            drift = torch.autograd.grad(
-                potential.sum(),
-                xt,
-                create_graph=self.training,
-            )[0]
+            drift = self.evaluate_net(xt)
 
         if stoch:
             drift_part = drift - self.lx * xt
@@ -351,7 +391,7 @@ class AdditiveGradientFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
 
 
-class NonAutonomousAdditiveGradientFlow(NonAutonomousFlowMixin, GenericFlowMixin, Flow):
+class NonAutonomousAdditiveGradientFlow(NonAutonomousFlowMixin, GradientFlowMixin, Flow):
     """Non-autonomous additive-noise flow with gradient-based drift.
 
     The potential network is evaluated on full time-augmented inputs
@@ -420,13 +460,7 @@ class NonAutonomousAdditiveGradientFlow(NonAutonomousFlowMixin, GenericFlowMixin
         with torch.enable_grad():
             xt_full = Xtrain.clone()
             xt_full.requires_grad_(True)
-            potential = self.evaluate_net(xt_full).squeeze(-1)
-            grad_full = torch.autograd.grad(
-                potential.sum(),
-                xt_full,
-                create_graph=self.training,
-            )[0]
-            drift = grad_full[:, : self.Ndim]
+            drift = self.evaluate_net(xt_full)[:, : self.Ndim]
             xt = xt_full[:, : self.Ndim]
 
         if stoch:
@@ -438,7 +472,7 @@ class NonAutonomousAdditiveGradientFlow(NonAutonomousFlowMixin, GenericFlowMixin
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
 
     
-class ODEFlow(NonAutonomousFlowMixin, GenericFlowMixin, Flow):
+class ODEFlow(NonAutonomousFlowMixin, Flow):
     """Deterministic flow with drift network on full time-augmented inputs.
 
     Parameters
@@ -500,7 +534,7 @@ class ODEFlow(NonAutonomousFlowMixin, GenericFlowMixin, Flow):
         return (drift - self.lx * xt[:,:self.Ndim])
     
     
-class AdditiveFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class AdditiveFlow(AutonomousFlowMixin, Flow):
     """Additive-noise flow with score-based probability-flow correction.
 
     Parameters
@@ -576,7 +610,7 @@ class AdditiveFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", self.D, score)
 
 
-class MultiplicativeFlow(AutonomousFlowMixin, GenericFlowMixin, Flow):
+class MultiplicativeFlow(AutonomousFlowMixin, Flow):
     """Multiplicative-noise flow model with autonomous drift and score correction."""
 
     def __init__(

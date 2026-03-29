@@ -1,4 +1,4 @@
-"""Data reshaping and snapshot conversion helpers for PFI estimators."""
+"""Data helpers for PFI estimators and applications."""
 
 from pathlib import Path
 import gzip
@@ -282,6 +282,159 @@ def deep_dict_update(base, updates):
         else:
             out[key] = value
     return out
+
+
+
+def evaluate_signed_network_auprc(Delta, M, symmetric=False):
+    """Compute edge/positive/negative AUPRC for signed network recovery.
+
+    Parameters
+    ----------
+    Delta : array-like of shape (n, n)
+        Inferred response matrix.
+    M : array-like of shape (n, n)
+        Ground-truth signed matrix with entries in ``{-1, 0, 1}``.
+    symmetric : bool, default=False
+        If ``True``, evaluate only the strict upper triangle.
+        If ``False``, evaluate all off-diagonal entries.
+
+    Returns
+    -------
+    out : dict
+        Dictionary with:
+        - ``AP_edge``, ``AP_pos``, ``AP_neg``, ``AP_signed``
+        - PR-curve arrays under ``PR_edge``, ``PR_pos``, ``PR_neg``
+    """
+    from sklearn.metrics import average_precision_score, precision_recall_curve
+
+    Delta = np.asarray(Delta, dtype=float)
+    M = np.asarray(M, dtype=float)
+    if Delta.shape != M.shape:
+        raise ValueError("Delta and M must have the same shape.")
+    if Delta.ndim != 2 or Delta.shape[0] != Delta.shape[1]:
+        raise ValueError("Delta and M must be square matrices.")
+
+    n = Delta.shape[0]
+    mask = np.ones((n,n), dtype=bool)
+    if symmetric:
+        mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+        
+
+    d = Delta[mask].reshape(-1)
+    y = M[mask].reshape(-1)
+
+    y_edge = (y != 0).astype(int)
+    s_edge = np.abs(d)
+
+    y_pos = (y == 1).astype(int)
+    s_pos = d
+
+    y_neg = (y == -1).astype(int)
+    s_neg = -d
+
+    def _pr(y_true, score):
+        if np.sum(y_true) == 0:
+            return np.nan, np.array([1.0]), np.array([0.0]), np.array([])
+        ap = float(average_precision_score(y_true, score))
+        prec, rec, thr = precision_recall_curve(y_true, score)
+        return ap, prec, rec, thr
+
+    ap_edge, p_edge, r_edge, t_edge = _pr(y_edge, s_edge)
+    ap_pos, p_pos, r_pos, t_pos = _pr(y_pos, s_pos)
+    ap_neg, p_neg, r_neg, t_neg = _pr(y_neg, s_neg)
+    ap_signed = float(np.nanmean([ap_pos, ap_neg]))
+
+    return {
+        "AP_edge": ap_edge,
+        "AP_pos": ap_pos,
+        "AP_neg": ap_neg,
+        "AP_signed": ap_signed,
+        "PR_edge": {"precision": p_edge, "recall": r_edge, "thresholds": t_edge},
+        "PR_pos": {"precision": p_pos, "recall": r_pos, "thresholds": t_pos},
+        "PR_neg": {"precision": p_neg, "recall": r_neg, "thresholds": t_neg},
+    }
+
+
+def get_hsc_network(genes):
+    """Build the HSC regulatory sign matrix aligned with a gene list.
+
+    Parameters
+    ----------
+    genes : sequence of str
+        Gene names defining matrix order.
+
+    Returns
+    -------
+    M : ndarray of shape (n_genes, n_genes)
+        Regulatory sign matrix with entries in ``{-1, 0, 1}`` where
+        ``M[i, j]`` encodes the sign of the effect of gene ``i`` on gene ``j``.
+    network_genes : list of str, optional
+        Returned only when ``return_network_genes=True``.
+    """
+    genes = list(genes)
+    network_genes = [
+        "gata1",
+        "gata2",
+        "fli1",
+        "spi1",
+        "zfpm1",
+        "klf1",
+        "tal1",
+        "cebpa",
+        "jun",
+        "erg",
+        "gfi1",
+    ]
+    idx = {g: i for i, g in enumerate(genes)}
+    M = np.zeros((len(genes), len(genes)), dtype=float)
+
+    def set_edge(src, tgt, sign):
+        if src in idx and tgt in idx:
+            M[idx[src], idx[tgt]] = float(sign)
+
+    # Edges from the HSC boolean-network rules (activation=+1, inhibition=-1).
+    set_edge("gata1", "gata1", +1)
+    set_edge("gata2", "gata1", +1)
+    set_edge("fli1", "gata1", +1)
+    set_edge("spi1", "gata1", -1)
+
+    set_edge("gata2", "gata2", +1)
+    set_edge("gata1", "gata2", -1)
+    set_edge("zfpm1", "gata2", -1)
+    set_edge("spi1", "gata2", -1)
+
+    set_edge("gata1", "zfpm1", +1)
+
+    set_edge("gata1", "klf1", +1)
+    set_edge("fli1", "klf1", -1)
+
+    set_edge("gata1", "fli1", +1)
+    set_edge("klf1", "fli1", -1)
+
+    set_edge("gata1", "tal1", +1)
+    set_edge("spi1", "tal1", -1)
+
+    set_edge("cebpa", "cebpa", +1)
+    set_edge("gata1", "cebpa", -1)
+    set_edge("zfpm1", "cebpa", -1)
+    set_edge("tal1", "cebpa", -1)
+
+    set_edge("cebpa", "spi1", +1)
+    set_edge("spi1", "spi1", +1)
+    set_edge("gata1", "spi1", -1)
+    set_edge("gata2", "spi1", -1)
+
+    set_edge("spi1", "jun", +1)
+    set_edge("gfi1", "jun", -1)
+
+    set_edge("spi1", "erg", +1)
+    set_edge("jun", "erg", +1)
+    set_edge("gfi1", "erg", -1)
+
+    set_edge("cebpa", "gfi1", +1)
+    set_edge("erg", "gfi1", -1)
+
+    return M, network_genes
 
 
 def assign_OT(x, y, method="exact", reg=0.1, sym=False, return_indices=False):

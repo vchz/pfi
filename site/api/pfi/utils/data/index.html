@@ -1292,10 +1292,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#pfi.utils.data.evaluate_signed_network_auprc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;evaluate_signed_network_auprc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pfi.utils.data.fetch" class="md-nav__link">
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;fetch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pfi.utils.data.get_hsc_network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;get_hsc_network
       
     </span>
   </a>
@@ -1456,7 +1478,7 @@
 
     <div class="doc doc-contents first">
 
-        <p>Data reshaping and snapshot conversion helpers for PFI estimators.</p>
+        <p>Data helpers for PFI estimators and applications.</p>
 
 
 
@@ -1738,6 +1760,70 @@ assignment pairs.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="pfi.utils.data.evaluate_signed_network_auprc" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">evaluate_signed_network_auprc</span><span class="p">(</span><span class="n">Delta</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">symmetric</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Compute edge/positive/negative AUPRC for signed network recovery.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>Delta</code></b>
+              (<code>array-like of shape (n, n)</code>)
+          –
+          <div class="doc-md-description">
+            <p>Inferred response matrix.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>M</code></b>
+              (<code>array-like of shape (n, n)</code>)
+          –
+          <div class="doc-md-description">
+            <p>Ground-truth signed matrix with entries in <code>{-1, 0, 1}</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>symmetric</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>If <code>True</code>, evaluate only the strict upper triangle.
+If <code>False</code>, evaluate all off-diagonal entries.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+<b><code>out</code></b> (              <code><span title="dict">dict</span></code>
+)          –
+          <div class="doc-md-description">
+            <p>Dictionary with:
+- <code>AP_edge</code>, <code>AP_pos</code>, <code>AP_neg</code>, <code>AP_signed</code>
+- PR-curve arrays under <code>PR_edge</code>, <code>PR_pos</code>, <code>PR_neg</code></p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="pfi.utils.data.fetch" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">fetch</span><span class="p">(</span><span class="n">url</span><span class="p">)</span></code>
 
@@ -1769,6 +1855,57 @@ assignment pairs.</p>
 )          –
           <div class="doc-md-description">
             <p>Local file path under <code>PFI_DATA_FOLDER</code>.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="pfi.utils.data.get_hsc_network" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">get_hsc_network</span><span class="p">(</span><span class="n">genes</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Build the HSC regulatory sign matrix aligned with a gene list.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>genes</code></b>
+              (<code>sequence of str</code>)
+          –
+          <div class="doc-md-description">
+            <p>Gene names defining matrix order.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+<b><code>M</code></b> (              <code>ndarray of shape (n_genes, n_genes)</code>
+)          –
+          <div class="doc-md-description">
+            <p>Regulatory sign matrix with entries in <code>{-1, 0, 1}</code> where
+<code>M[i, j]</code> encodes the sign of the effect of gene <code>i</code> on gene <code>j</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+<b><code>network_genes</code></b> (              <code>list of str, optional</code>
+)          –
+          <div class="doc-md-description">
+            <p>Returned only when <code>return_network_genes=True</code>.</p>
           </div>
         </li>
     </ul>
