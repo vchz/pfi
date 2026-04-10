@@ -73,7 +73,7 @@ def PFM_(
     growth_model=None,
     precomputed_traj=None,
     bs=None,
-    fac=1,
+    fac=4,
     nb=1,
     n_epochs=2000,
     lr=1e-3,
@@ -95,7 +95,7 @@ def PFM_(
         Drift model receiving ``(x, t)`` as input.
     interp : object or None, default=None
         Interpolant implementing ``fit`` and ``predict``. If ``None``,
-        ``LinearInterpolant()`` is used.
+        ``ChebyshevInterpolant()`` is used.
     growth_model : torch.nn.Module or None, default=None
         Optional growth model receiving spatial coordinates only.
     precomputed_traj : torch.Tensor or None, default=None
@@ -134,7 +134,7 @@ def PFM_(
         Optimization loss history.
     """
     if interp is None:
-        interp = LinearInterpolant()
+        interp = ChebyshevInterpolant()
     nsamples = min(s.shape[0] for s in dist)
     dist_tensor = torch.stack(
         [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
@@ -142,12 +142,15 @@ def PFM_(
     )
     device = dist_tensor.device
 
-    x_mean = dist_tensor.mean(dim=(0, 1))
-    x_std = dist_tensor.std(dim=(0, 1))
-    t_mean = times.mean().to(device=device, dtype=x_mean.dtype)
-    t_std = times.std().to(device=device, dtype=x_std.dtype)
+    t_tensor = (
+        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
+        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
+    )
+    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
 
-    net.set_scales(torch.cat([x_mean, t_mean[None]]), torch.cat([x_std, t_std[None]]))
+    net.init_model(scale_data)
+    if growth_model is not None:
+        growth_model.init_model(scale_data)
 
     if precomputed_traj is None:
         batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot)
@@ -209,7 +212,7 @@ def PFM_(
         if zero_growth:
             growth_eval = torch.zeros((batch_size, fac * nsnaps), dtype=xtrain.dtype, device=device)
         else:
-            growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
+            growth_eval = growth_model(xtrain).reshape(batch_size, fac * nsnaps)
 
         log_mass = torch.zeros_like(growth_eval)
         log_mass[:, 0] = np.log(1.0 / batch_size)
@@ -223,7 +226,7 @@ def PFM_(
         res = (drift_pred - ytrain).pow(2).sum(dim=1).reshape(batch_size, fac * nsnaps)
         if zero_growth:
             weights_ = torch.ones_like(res)
-
+            
         wcfm_obj = torch.mean(weights_ * res, axis=0)
         mass_balance = (pred_mass[::fac] - mass_vec) ** 2
 

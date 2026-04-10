@@ -20,8 +20,6 @@ class ScoreModel:
         Extra keyword arguments passed to the selected solver.
         For ``solver='dsm'``, this can include ``scheduler_kwargs`` to
         configure the internal ``MultiStepLR``.
-    noise_lvl : float, default=0
-        Noise level used at inference/sampling time for DSM.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
 
@@ -37,8 +35,6 @@ class ScoreModel:
         dimension ``ndim + 2``.
     min_noise_ : float
         Minimum noise level used by the fitted DSM model.
-    noise_lvl_ : float
-        Effective inference/sampling noise level used by the fitted model.
     """
 
     def __init__(
@@ -46,7 +42,6 @@ class ScoreModel:
         model,
         solver="dsm",
         solver_kwargs=None,
-        noise_lvl=0.0,
         device="cpu",
     ):
         """Initialize the score estimator wrapper.
@@ -59,16 +54,12 @@ class ScoreModel:
             Score solver.
         solver_kwargs : dict or None, default=None
             Solver configuration.
-        noise_lvl : float, default=0
-            Noise level used at inference/sampling time for DSM.
-            This parameter is only used when ``solver='dsm'``.
         device : str or torch.device, default='cpu'
             Device used for fit and inference.
         """
         self.model = model
         self.solver = solver
         self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
-        self.noise_lvl = noise_lvl
         self.device = device
 
     def fit(
@@ -107,7 +98,7 @@ class ScoreModel:
             )
             self.loss_ = np.asarray(loss_hist)
             self.min_noise_ = min_noise
-            self.noise_lvl_ = max(self.min_noise_, self.noise_lvl)
+            self.model_.noise_lvl = max(self.min_noise_, self.model_.noise_lvl)
         else:
             raise NotImplementedError("Other score matching solvers not implemented yet.")
 
@@ -130,12 +121,8 @@ class ScoreModel:
             Predicted score vectors.
         """
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
-        sigma_value = self.noise_lvl_
-        sigma_col = torch.full((X.shape[0], 1), sigma_value, dtype=torch.float32, device=self.device)
-        X_in = torch.cat([X[:, : self.Ndim_], sigma_col, X[:, -1:]], dim=1)
-        
         with torch.no_grad():
-            score = self.model_(X_in)
+            score = self.model_(X)
 
         return score.detach().cpu().numpy()
 
@@ -161,11 +148,11 @@ class ScoreModel:
             Generated samples with time in the last column.
         """
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
-        
-        if nsamples is None:
-            nsamples = X.shape[0]
 
         if self.solver == "dsm":
+            if nsamples is None:
+                nsamples = X.shape[0]
+
             init_ = torch.zeros(
                 (nsamples, self.Ndim_ + 2),
                 dtype=torch.float32,
@@ -177,7 +164,7 @@ class ScoreModel:
                 device=self.device,
             )
             time_ = X[:, -1]
-            target_noise = self.noise_lvl_
+            target_noise = float(getattr(self.model_, "noise_lvl", 0.0))
             with torch.no_grad():
                 gen = generate_data_DSM(
                     maxiter=maxiter,
@@ -193,7 +180,7 @@ class ScoreModel:
             )
             return gen_xt.detach().cpu().numpy()
 
-        raise NotImplementedError("Langevin sampling not implemented yet.")
+        raise NotImplementedError("Other score matching solvers not implemented yet.")
 
     def score(
         self,

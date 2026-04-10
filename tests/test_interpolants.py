@@ -3,8 +3,10 @@ import torch
 
 from pfi.flow.couplings import pairwise_OT
 from pfi.flow.interpolants import ChebyshevInterpolant
-from pfi.flow.models import OUFlow, OUScore
+from pfi.flow.models import OUFlow
+from pfi.score.models import OUScore
 from pfi.utils.data import X_from_snapshots
+from pfi.utils.nns import ConstantNN, LinearNN
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 
@@ -59,8 +61,17 @@ def test_chebyshev_interpolant_OU():
     S0_ = torch.tensor(np.eye(ndim) * S0, dtype=torch.float32)
     D_ = torch.tensor(np.eye(ndim) * D, dtype=torch.float32)
 
-    true_score = OUScore(net=B_, m0=m0_, S0=S0_, D=D_)
-    true_flow = OUFlow(net=B_, score=true_score, D=D_)
+    true_score = OUScore(m0=m0_, S0=S0_, D=D_)
+    true_score.Ndim_ = ndim
+    true_score.net_ = ConstantNN([ndim, ndim]).to(dtype=torch.float32)
+    with torch.no_grad():
+        true_score.net_.B.copy_(B_)
+
+    true_flow = OUFlow(score=true_score, D=D_)
+    true_flow.Ndim_ = ndim
+    true_flow.net_ = LinearNN([ndim, ndim]).to(dtype=torch.float32)
+    with torch.no_grad():
+        true_flow.net_.B.copy_(B_)
 
     dx_flow = (
         true_flow(torch.tensor(X, dtype=torch.float32))

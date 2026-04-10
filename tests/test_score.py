@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from pfi.score import ScoreModel
+from pfi import DSMScore
 from pfi.utils.nns import DNN
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
@@ -42,7 +43,13 @@ def test_dsm_OU():
     X = X_from_snapshots(samples_full, tt)
 
     Np = 50
-    score_model = DNN([ndim + 2, Np, Np, Np, Np, Np, ndim], activation=nn.ELU()).to(device)
+    score_model = DSMScore(
+        sizes=[Np, Np, Np, Np, Np],
+        net_cls=DNN,
+        seed=7,
+        activation=nn.ELU(),
+        noise_lvl=0.0,
+    ).to(device)
 
     score_reg = ScoreModel(
         model=score_model,

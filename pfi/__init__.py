@@ -7,12 +7,12 @@ and utility helpers.
 import importlib as _importlib
 from ._pfi import (
     PFI,
-    DEFAULT_PFI_PARAMETERS,
     hyperopt_pfi,
     make_flow_estimator,
     make_pfi_estimator,
     make_score_estimator,
 )
+from .score.models import DSMScore
 
 __version__ = '0.1'
 
@@ -28,7 +28,7 @@ __all__ = _submodules + [
     'make_score_estimator',
     'make_flow_estimator',
     'make_pfi_estimator',
-    'DEFAULT_PFI_PARAMETERS',
+    'DSMScore',
 ]
 
 

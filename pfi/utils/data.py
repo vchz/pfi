@@ -126,7 +126,7 @@ def load_data(
     nsamples,
     genes,
     time_key,
-    cell_type_key,
+    cell_type_key=None,
     seed=0,
     normalize=False,
     plot_total_counts=False,
@@ -150,7 +150,7 @@ def load_data(
         Selected genes used to build expression snapshots.
     time_key : str
         Name of the observation column storing time labels.
-    cell_type_key : str
+    cell_type_key : str, default=None
         Name of the observation column storing cell-type labels.
     seed : int, default=0
         Random seed for snapshot subsampling.
@@ -184,15 +184,16 @@ def load_data(
     adata = sc.read_h5ad(path)
     expr_full = adata.X
     expr_full = expr_full.toarray() if hasattr(expr_full, "toarray") else np.asarray(expr_full)
+    total_full = expr_full.sum(axis=1, keepdims=True)
 
     if normalize:
-        total_full = expr_full.sum(axis=1, keepdims=True)
         adata.X = (1e4 * expr_full) / (total_full + 1e-12)
 
     expr_all = adata[:, genes].X
     expr_all = expr_all.toarray() if hasattr(expr_all, "toarray") else np.asarray(expr_all)
     total_counts = expr_all.sum(axis=1)
 
+    
     if plot_total_counts:
         import matplotlib.pyplot as plt
 
@@ -233,9 +234,10 @@ def load_data(
     unique_times = np.asarray(adata.obs[time_key].unique())
     samples = np.zeros((len(unique_times), nsamples, n_genes), dtype=np.float32)
 
-    cell_type_categories = list(adata.obs[cell_type_key].cat.categories)
-    print(cell_type_categories)
-    cell_type_to_int = {ct: i for i, ct in enumerate(cell_type_categories)}
+    if cell_type_key is not None:
+        cell_type_categories = list(adata.obs[cell_type_key].cat.categories)
+        print(cell_type_categories)
+        cell_type_to_int = {ct: i for i, ct in enumerate(cell_type_categories)}
     ind_array = np.zeros((len(unique_times), nsamples), dtype=int)
     rng = np.random.default_rng(seed)
 
@@ -243,7 +245,9 @@ def load_data(
         cells_at_time = adata[adata.obs[time_key] == time_point]
         expr = cells_at_time[:, genes].X
         expr = expr.toarray() if hasattr(expr, "toarray") else np.asarray(expr)
-        ct_values = cells_at_time.obs[cell_type_key].values
+
+        if cell_type_key is not None:
+            ct_values = cells_at_time.obs[cell_type_key].values
 
         n_cells = expr.shape[0]
 
@@ -253,10 +257,14 @@ def load_data(
             print('there were less cells than requested at snapshot', k)
             selected = rng.choice(n_cells, size=nsamples, replace=True)
 
-        cell_types = ct_values[selected]
-        ind_array[k, :] = [cell_type_to_int[ct] for ct in cell_types]
+        if cell_type_key is not None:
+            cell_types = ct_values[selected]
+            ind_array[k, :] = [cell_type_to_int[ct] for ct in cell_types]
         samples[k, :, :] = expr[selected, :]
 
+    if cell_type_key is None:
+        return samples, unique_times
+    
     return samples, unique_times, ind_array, adata.obs[cell_type_key]
 
 

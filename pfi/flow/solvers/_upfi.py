@@ -59,7 +59,7 @@ def _custom_ode_int(
         if growth_model is None:
             g = torch.zeros((batch_size,), dtype=x0.dtype, device=x0.device)
         else:
-            g = growth_model(x).squeeze(-1)
+            g = growth_model(inp).squeeze(-1)
 
         x = x + h * drift
         logw = logw + h * g
@@ -136,13 +136,14 @@ def UPFI_(
         [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
         dim=0,
     )
-    x_mean = dist_tensor.mean(dim=(0, 1))
-    x_std = dist_tensor.std(dim=(0, 1))
-    t_mean = times.mean().to(device=device, dtype=x_mean.dtype)
-    t_std = times.std().to(device=device, dtype=x_std.dtype)
-    net.set_scales(torch.cat([x_mean, t_mean[None]]), torch.cat([x_std, t_std[None]]))
-    if growth_model is not None and hasattr(growth_model, "set_scales"):
-        growth_model.set_scales(x_mean, x_std)
+    t_tensor = (
+        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
+        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
+    )
+    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
+    net.init_model(scale_data)
+    if growth_model is not None:
+        growth_model.init_model(scale_data)
 
     if bs is None:
         bs = max(1, nsamples // 4)

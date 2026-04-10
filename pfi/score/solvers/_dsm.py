@@ -145,7 +145,7 @@ def DSM_(
     if bs is None:
         bs = nsamples
 
-    x_train, x_data, x_mean, x_std, sigma = generate_noisy_training_data_batch(
+    x_train, x_data, _, _, sigma = generate_noisy_training_data_batch(
         dist,
         ndim,
         times,
@@ -153,8 +153,9 @@ def DSM_(
         nsamples,
         nsnaps,
     )
+    
+    net.init_model(x_train)
 
-    net.set_scales(x_mean, x_std)
 
     loader = FastTensorDataLoader(
         torch.permute(x_train, (2, 0, 1, 3)),

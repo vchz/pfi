@@ -7,83 +7,6 @@ import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
 
-class BatchNorm(object):
-    """Simple affine normalizer ``(x - mean) / std``.
-
-    Parameters
-    ----------
-    mean : float or torch.Tensor of shape (n_features,) or (1, n_features)
-        Feature-wise mean.
-    std : float or torch.Tensor of shape (n_features,) or (1, n_features)
-        Feature-wise standard deviation.
-    """
-
-    def __init__(
-        self,
-        mean,
-        std,
-    ):
-        self.mean = mean
-        self.std = std
-
-    def __call__(
-        self,
-        x,
-    ):
-        """Normalize an input tensor.
-
-        Parameters
-        ----------
-        x : torch.Tensor of shape (..., n_features)
-            Input tensor.
-
-        Returns
-        -------
-        x_norm : torch.Tensor of shape (..., n_features)
-            Normalized tensor.
-        """
-        return (x - self.mean) / (self.std + 1e-5)
-
-
-class FeatureNorm(object):
-    """Per-sample feature normalizer ``(x - mean_features) / std_features``.
-
-    This normalization computes mean and standard deviation across the last
-    dimension (features/genes) for each sample independently.
-
-    Parameters
-    ----------
-    eps : float, default=1e-5
-        Positive stabilization constant added to standard deviation.
-    """
-
-    def __init__(
-        self,
-        eps=1e-5,
-    ):
-        self.eps = eps
-
-    def __call__(
-        self,
-        x,
-    ):
-        """Normalize an input tensor per sample over feature dimension.
-
-        Parameters
-        ----------
-        x : torch.Tensor of shape (..., n_features)
-            Input tensor.
-
-        Returns
-        -------
-        x_norm : torch.Tensor of shape (..., n_features)
-            Per-sample feature-normalized tensor.
-        """
-        mean = x.mean(dim=-1, keepdim=True)
-        std = x.std(dim=-1, keepdim=True, unbiased=False)
-        return (x - mean) / (std + self.eps)
-
-
 class LayerNoWN(nn.Module):
     """Linear layer with Xavier initialization and no weight normalization.
 
@@ -135,63 +58,33 @@ class LayerNoWN(nn.Module):
 
 
 class DNN(nn.Module):
-    """Fully-connected network with optional feature normalization.
+    """Fully-connected network.
 
     Parameters
     ----------
     sizes : list of int
         Layer sizes including input and output dimensions.
-    mean : float or torch.Tensor, default=0
-        Initial mean used by the internal normalizer.
-    std : float or torch.Tensor, default=1
-        Initial standard deviation used by the internal normalizer.
     seed : int, default=0
         Random seed for layer initialization.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
-    feature_norm : bool, default=False
-        If ``True``, apply per-sample ``FeatureNorm`` after ``BatchNorm``.
     """
 
     def __init__(
         self,
         sizes,
-        mean=0,
-        std=1,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
     ):
         super(DNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
-        self.feature_norm = feature_norm
-        self.bn = BatchNorm(mean, std)
-        self.fn = FeatureNorm()
         layer = []
         for i in range(len(sizes) - 2):
             linear = LayerNoWN(sizes[i], sizes[i + 1], seed, activation)
             layer += [linear, activation]
         layer += [LayerNoWN(sizes[-2], sizes[-1], seed, activation)]
         self.net = nn.Sequential(*layer)
-
-    def set_scales(self, mean, std):
-        """Update normalization statistics.
-
-        Parameters
-        ----------
-        mean : torch.Tensor of shape (1, n_features)
-            New feature means.
-        std : torch.Tensor of shape (1, n_features)
-            New feature standard deviations.
-
-        Returns
-        -------
-        self : DNN
-            Estimator instance.
-        """
-        self.bn = BatchNorm(mean, std)
-        return self
 
     def forward(
         self,
@@ -209,9 +102,6 @@ class DNN(nn.Module):
         y : torch.Tensor of shape (..., sizes[-1])
             Network output.
         """
-        if self.feature_norm:
-            x = self.fn(x)
-        x = self.bn(x)
         return self.net(x)
 
 
@@ -222,33 +112,21 @@ class SpectralNormDNN(nn.Module):
     ----------
     sizes : list of int
         Layer sizes including input and output dimensions.
-    mean : float or torch.Tensor, default=0
-        Unused placeholder kept for API consistency.
-    std : float or torch.Tensor, default=1
-        Unused placeholder kept for API consistency.
     seed : int, default=0
         Random seed for layer initialization.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
-    feature_norm : bool, default=False
-        If ``True``, apply per-sample ``FeatureNorm`` after ``BatchNorm``.
     """
 
     def __init__(
         self,
         sizes,
-        mean=0,
-        std=1,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
     ):
         super(SpectralNormDNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
-        self.feature_norm = feature_norm
-        self.bn = BatchNorm(mean, std)
-        self.fn = FeatureNorm()
         layers = []
         for i in range(len(sizes) - 2):
             linear = nn.Linear(sizes[i], sizes[i + 1])
@@ -258,24 +136,6 @@ class SpectralNormDNN(nn.Module):
         final_linear = nn.Linear(sizes[-2], sizes[-1])
         layers.append(final_linear)
         self.net = nn.Sequential(*layers)
-
-    def set_scales(self, mean, std):
-        """Update normalization statistics.
-
-        Parameters
-        ----------
-        mean : torch.Tensor of shape (1, n_features)
-            New feature means.
-        std : torch.Tensor of shape (1, n_features)
-            New feature standard deviations.
-
-        Returns
-        -------
-        self : SpectralNormDNN
-            Estimator instance.
-        """
-        self.bn = BatchNorm(mean, std)
-        return self
 
     def forward(
         self,
@@ -293,10 +153,59 @@ class SpectralNormDNN(nn.Module):
         y : torch.Tensor of shape (..., sizes[-1])
             Network output.
         """
-        if self.feature_norm:
-            x = self.fn(x)
-        x = self.bn(x)
         return self.net(x)
+
+
+class LinearNN(nn.Module):
+    """Single linear map parameterized by a matrix ``B``.
+
+    Parameters
+    ----------
+    sizes : list of int
+        Two entries ``[in_dim, out_dim]``.
+    seed : int, default=0
+        Kept for API compatibility.
+    activation : torch.nn.Module, default=torch.nn.ELU()
+        Kept for API compatibility.
+    """
+
+    def __init__(self, sizes, seed=0, activation=nn.ELU()):
+        super().__init__()
+        _ = seed, activation
+        in_dim = int(sizes[0])
+        out_dim = int(sizes[-1])
+        self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
+
+    def forward(self, x):
+        """Apply the linear map to inputs ``x``."""
+        return torch.einsum("mr,nr->nm", self.B, x)
+
+
+class ConstantNN(nn.Module):
+    """Constant matrix module parameterized by ``B``.
+
+    Parameters
+    ----------
+    sizes : list of int
+        Two entries ``[in_dim, out_dim]``. The matrix ``B`` has shape
+        ``(out_dim, in_dim)``.
+    seed : int, default=0
+        Kept for API compatibility.
+    activation : torch.nn.Module, default=torch.nn.ELU()
+        Kept for API compatibility.
+    """
+
+    def __init__(self, sizes, seed=0, activation=nn.ELU()):
+        super().__init__()
+        _ = seed, activation
+        in_dim = int(sizes[0])
+        out_dim = int(sizes[-1])
+        self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
+
+    def forward(self, x):
+        """Return the learned constant matrix ``B``."""
+        _ = x
+        return self.B
 
     
 class FastTensorDataLoader:

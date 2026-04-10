@@ -3,8 +3,10 @@ import torch
 
 from pfi.flow import FlowModel
 from pfi.flow.interpolants import ChebyshevInterpolant
-from pfi.flow.models import OUFlow, OUScore
+from pfi.flow.models import OUFlow
+from pfi.score.models import OUScore
 from pfi.utils.data import X_from_snapshots
+from pfi.utils.nns import ConstantNN
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 def test_flow_OU():
@@ -47,13 +49,13 @@ def test_flow_OU():
     m0_ = torch.tensor(m0, dtype=torch.float32, device=device)
     S0_ = torch.tensor(np.eye(ndim) * S0, dtype=torch.float32, device=device)
 
-    true_score = OUScore(net=B_, m0=m0_, S0=S0_, D=D_)
+    true_score = OUScore(m0=m0_, S0=S0_, D=D_)
+    true_score.Ndim_ = ndim
+    true_score.net_ = ConstantNN([ndim, ndim]).to(device=device, dtype=torch.float32)
+    with torch.no_grad():
+        true_score.net_.B.copy_(B_)
 
-    flow_model = OUFlow(
-        net=torch.tensor(np.zeros((2, 2)), dtype=torch.float32, device=device, requires_grad=True),
-        score=true_score,
-        D=D_,
-    )
+    flow_model = OUFlow(score=true_score, D=D_)
 
     flow_reg = FlowModel(
         flow=flow_model,
@@ -64,6 +66,6 @@ def test_flow_OU():
     )
     flow_reg.fit(X)
 
-    B_inf = flow_reg.flow_.B.detach().cpu().numpy()
+    B_inf = flow_reg.flow_.net_.B.detach().cpu().numpy()
     rel_err = np.linalg.norm(B_inf - B) / np.linalg.norm(B)
     assert rel_err < 0.07

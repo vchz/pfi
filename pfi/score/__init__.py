@@ -1,6 +1,8 @@
 """Public score APIs and solver functions."""
 
 from ._base import ScoreModel
+from .models import OUScore, DSMScore
+from . import models
 from .solvers import (
     DSM_,
     freeze_dsm_score,
@@ -11,6 +13,9 @@ from .solvers import (
 
 __all__ = [
     "ScoreModel",
+    "OUScore",
+    "DSMScore",
+    "models",
     "DSM_",
     "freeze_dsm_score",
     "generate_data_DSM",

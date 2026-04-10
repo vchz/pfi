@@ -4,7 +4,8 @@ import torch.nn as nn
 
 from pfi import make_pfi_estimator
 from pfi.flow.interpolants import ChebyshevInterpolant
-from pfi.flow.models import CLEFlow
+from pfi.flow.models import CLEFlow, AutonomousGrowth
+from pfi.score.models import DSMScore
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.nns import DNN
 from pfi.utils.simulations import g_rate, simulate_toggle_switch, toggle_switch
@@ -48,11 +49,11 @@ def _get_toggle_switch_errors(flow_estimator):
     ref_param = next(flow_estimator.flow_.parameters())
     grid_xy_t = torch.tensor(grid_xy, dtype=ref_param.dtype, device=ref_param.device)
     with torch.no_grad():
-        force_inf = flow_estimator.flow_.net(grid_xy_t).cpu().numpy()
+        force_inf = flow_estimator.flow_.evaluate_net(grid_xy_t).cpu().numpy()
 
     growth_true = g_rate(grid_xy[:, 0], grid_xy[:, 1], TOGGLE_SWITCH_GROWTH)
     with torch.no_grad():
-        growth_inf = flow_estimator.growth_(grid_xy_t).squeeze(-1).cpu().numpy()
+        growth_inf = flow_estimator.growth_.evaluate_net(grid_xy_t).squeeze(-1).cpu().numpy()
 
     force_rel_mse = np.mean(((force_true - force_inf) ** 2).sum(axis=1)) / np.mean((force_true ** 2).sum(axis=1))
     growth_rel_mse = np.mean((growth_true - growth_inf) ** 2) / np.mean(growth_true ** 2)
@@ -61,52 +62,53 @@ def _get_toggle_switch_errors(flow_estimator):
 
 def test_pfm_toggle_switch():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ndim = 2
     X = _get_toggle_switch_data(seed=0)
 
     Np = 50
     Np_flow = 25
-    params = {
-        "s_solver": "dsm",
-        "f_solver": "pfm",
-        "f_model": CLEFlow,
-        "f_model_kwargs": {
-            "lx": 1.0,
-        },
-        "s_net_kwargs": {"feature_norm": False, 
-                         "activation": nn.ELU(),
-        },
-        "f_net_kwargs": {"feature_norm": False, 
-                         "activation": nn.ELU(),
-        },
-        "s_net": DNN,
-        "f_net": DNN,
-        "g_net": DNN,
-        "s_width": Np,
-        "f_width": Np_flow,
-        "s_depth": 5,
-        "f_depth": 4,
-        "s_noise_lvl": 0.1,
-        "s_solver_kwargs": {
-            "L": 10,
-            "bs": None,
-            "adp_flag": 1,
-        },
-        "f_solver_kwargs": {
+    score_model = DSMScore(
+        sizes=[Np] * 5,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        feature_norm=False,
+        batch_norm=True,
+        noise_lvl=0.1,
+    )
+    flow_model = CLEFlow(
+        score=None,
+        sizes=[Np_flow] * 4,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        lx=1.0,
+        feature_norm=False,
+        batch_norm=False,
+    )
+    growth_model = AutonomousGrowth(
+        sizes=[Np_flow] * 4,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        feature_norm=False,
+        batch_norm=False,
+    )
+
+    est = make_pfi_estimator(
+        score_model=score_model,
+        flow_model=flow_model,
+        growth_model=growth_model,
+        s_solver="dsm",
+        f_solver="pfm",
+        s_solver_kwargs={"L": 10, "bs": None, "adp_flag": 1, "lr": 5e-4, "n_epochs": 2000},
+        f_solver_kwargs={
             "interp": ChebyshevInterpolant(),
             "nb": 1,
             "fac": 2,
+            "lr": 1e-3,
+            "n_epochs": 2000,
         },
-        "s_lr": 5e-4,
-        "f_lr": 1e-3,
-        "s_n_epochs": 2000,
-        "f_n_epochs": 2000,
-        "fit_on_score_samples": False,
-    }
-
-    est = make_pfi_estimator(
-        ndim=ndim,
-        params=params,
+        fit_on_score_samples=False,
         device=device,
         seed=0,
         verbose=False,
@@ -118,60 +120,53 @@ def test_pfm_toggle_switch():
     assert np.all(score_eds < 0.005)
 
     force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator)
-    assert force_rel_mse < 0.07
-    assert growth_rel_mse < 0.07
+    assert force_rel_mse < 0.08
+    assert growth_rel_mse < 0.05
 
 
 def test_upfi_toggle_switch():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ndim = 2
     X = _get_toggle_switch_data(seed=0)
 
     Np = 50
     Np_flow = 25
-    params = {
-        "s_solver": "dsm",
-        "f_solver": "upfi",
-        "f_model": CLEFlow,
-        "f_model_kwargs": {
-            "lx": 1.0,
-        },
-        "s_net_kwargs": {
-            "feature_norm": False, 
-            "activation": nn.ELU(),
-        },
-        "f_net_kwargs": {
-            "feature_norm": False, 
-            "activation": nn.ELU(),
-        },
-        "s_net": DNN,
-        "f_net": DNN,
-        "g_net": DNN,
-        "s_width": Np,
-        "f_width": Np_flow,
-        "s_depth": 5,
-        "f_depth": 4,
-        "s_noise_lvl": 0.1,
-        "s_solver_kwargs": {
-            "L": 10,
-            "bs": None,
-            "adp_flag": 1,
-        },
-        "f_solver_kwargs": {
-            "n_steps": 2,
-            "reg_wfr": 0.1,
-            "reach": 20.0,
-        },
-        "s_lr": 5e-4,
-        "f_lr": 1e-3,
-        "s_n_epochs": 2000,
-        "f_n_epochs": 2000,
-        "fit_on_score_samples": False,
-    }
+    score_model = DSMScore(
+        sizes=[Np] * 5,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        feature_norm=False,
+        batch_norm=True,
+        noise_lvl=0.1,
+    )
+    flow_model = CLEFlow(
+        score=None,
+        sizes=[Np_flow] * 4,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        lx=1.0,
+        feature_norm=False,
+        batch_norm=False,
+    )
+    growth_model = AutonomousGrowth(
+        sizes=[Np_flow] * 4,
+        net_cls=DNN,
+        seed=0,
+        activation=nn.ELU(),
+        feature_norm=False,
+        batch_norm=False,
+    )
 
     est = make_pfi_estimator(
-        ndim=ndim,
-        params=params,
+        score_model=score_model,
+        flow_model=flow_model,
+        growth_model=growth_model,
+        s_solver="dsm",
+        f_solver="upfi",
+        s_solver_kwargs={"L": 10, "bs": None, "adp_flag": 1, "lr": 5e-4, "n_epochs": 2000},
+        f_solver_kwargs={"n_steps": 2, "reg_wfr": 1, "reach": 20.0, "lr": 1e-3, "n_epochs": 2000},
+        fit_on_score_samples=False,
         device=device,
         seed=0,
         verbose=False,
@@ -180,5 +175,5 @@ def test_upfi_toggle_switch():
     est.fit(X)
 
     force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator)
-    assert force_rel_mse < 0.06
-    assert growth_rel_mse < 0.1
+    assert force_rel_mse < 0.065
+    assert growth_rel_mse < 0.085

@@ -156,11 +156,14 @@ def UFM_OT_(
     )
     device = dist_tensor.device
 
-    x_mean = dist_tensor.mean(dim=(0, 1))
-    x_std = dist_tensor.std(dim=(0, 1))
-    t_mean = times.mean().to(device=device, dtype=x_mean.dtype)
-    t_std = times.std().to(device=device, dtype=x_std.dtype)
-    net.set_scales(torch.cat([x_mean, t_mean[None]]), torch.cat([x_std, t_std[None]]))
+    t_tensor = (
+        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
+        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
+    )
+    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
+    net.init_model(scale_data)
+    if growth_model is not None:
+        growth_model.init_model(dist_tensor)
 
     batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot)
     nsnaps, nsamples, ndim = batch_ot_samples.shape
@@ -348,11 +351,14 @@ def UFM_UOT_(
     )
     device = dist_tensor.device
 
-    x_mean = dist_tensor.mean(dim=(0, 1))
-    x_std = dist_tensor.std(dim=(0, 1))
-    t_mean = times.mean().to(device=device, dtype=x_mean.dtype)
-    t_std = times.std().to(device=device, dtype=x_std.dtype)
-    net.set_scales(torch.cat([x_mean, t_mean[None]]), torch.cat([x_std, t_std[None]]))
+    t_tensor = (
+        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
+        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
+    )
+    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
+    net.init_model(scale_data)
+    if growth_model is not None:
+        growth_model.init_model(dist_tensor)
 
     batch_ot_samples, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot)
     _, nsamples, ndim = batch_ot_samples.shape
