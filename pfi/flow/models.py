@@ -1,7 +1,6 @@
 """Flow model classes used by flow-matching regression."""
 
 import torch
-import torch.nn as nn
 
 from .._models import (
     Model,
@@ -10,7 +9,7 @@ from .._models import (
     PositiveModelMixin,
     GradientModelMixin,
 )
-from ..utils.nns import SpectralNormDNN, divergence, symsqrt
+from ..utils.nns import divergence, symsqrt
 from ..utils.nns import LinearNN
 
 
@@ -20,24 +19,12 @@ class CLEFlow(AutonomousModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         vol=1.0,
         lx=1.0,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize CLE flow components."""
-        super(CLEFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(CLEFlow, self).__init__(**kwargs)
         self.score = score
         self.vol = vol
         self.lx = lx
@@ -102,23 +89,8 @@ class PositiveCLEFlow(PositiveModelMixin, CLEFlow):
 class AutonomousGrowth(AutonomousModelMixin, Model):
     """Autonomous growth model wrapper over a neural network."""
 
-    def __init__(
-        self,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=True,
-    ):
-        super(AutonomousGrowth, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+    def __init__(self, **kwargs):
+        super(AutonomousGrowth, self).__init__(**kwargs)
 
     def dim_output(self):
         return 1
@@ -135,15 +107,15 @@ class OUFlow(AutonomousModelMixin, Model):
         score,
         D=0.5,
         lx=0,
-        feature_norm=False,
-        batch_norm=False,
+        **kwargs,
     ):
         """Initialize OU flow components."""
+        kwargs.pop("sizes", None)
+        kwargs.pop("net_cls", None)
         super(OUFlow, self).__init__(
             sizes=[],
             net_cls=LinearNN,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
+            **kwargs,
         )
         self.lx = lx
         self.score = score
@@ -197,23 +169,11 @@ class AutonomousODEFlow(AutonomousModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize autonomous ODE flow components."""
-        super(AutonomousODEFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(AutonomousODEFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 
@@ -260,24 +220,12 @@ class AdditiveGradientFlow(GradientModelMixin, AutonomousModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
         D=0.5,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize additive gradient flow components."""
-        super(AdditiveGradientFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(AdditiveGradientFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
@@ -330,24 +278,12 @@ class NonAutonomousAdditiveGradientFlow(GradientModelMixin, GenericModelMixin, M
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
         D=0.5,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize non-autonomous additive gradient flow components."""
-        super(NonAutonomousAdditiveGradientFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(NonAutonomousAdditiveGradientFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
@@ -401,23 +337,11 @@ class ODEFlow(GenericModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize ODE flow components."""
-        super(ODEFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(ODEFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 
@@ -463,24 +387,12 @@ class AdditiveFlow(AutonomousModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
         D=0.5,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize additive flow components."""
-        super(AdditiveFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(AdditiveFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
@@ -533,23 +445,11 @@ class MultiplicativeFlow(AutonomousModelMixin, Model):
     def __init__(
         self,
         score,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
         lx=1.0,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
         """Initialize multiplicative flow components."""
-        super(MultiplicativeFlow, self).__init__(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
+        super(MultiplicativeFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 

@@ -5,7 +5,6 @@ from .models import OUScore, DSMScore
 from . import models
 from .solvers import (
     DSM_,
-    freeze_dsm_score,
     generate_data_DSM,
     generate_noisy_training_data_batch,
     geometric_sequence,
@@ -17,7 +16,6 @@ __all__ = [
     "DSMScore",
     "models",
     "DSM_",
-    "freeze_dsm_score",
     "generate_data_DSM",
     "geometric_sequence",
     "generate_noisy_training_data_batch",

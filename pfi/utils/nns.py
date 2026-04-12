@@ -114,33 +114,49 @@ class SpectralNormDNN(nn.Module):
         Layer sizes including input and output dimensions.
     seed : int, default=0
         Random seed for layer initialization.
+    dim_x: int, default=None
+        The dimension of the x variables to apply spectral norm
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
     """
-
     def __init__(
         self,
         sizes,
+        dim_x=None,
         seed=0,
         activation=nn.ELU(),
+        full=False,
     ):
+        
         super(SpectralNormDNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
+
+        self.dim_x = dim_x if dim_x is not None else sizes[0]
+        self.has_t = self.dim_x < sizes[0]
+        self.activation = activation
+
+        self.linear_x = nn_utils.spectral_norm(
+            nn.Linear(self.dim_x, sizes[1])
+        )
+        if self.has_t:
+            self.linear_t = nn.Linear(sizes[0] - self.dim_x, sizes[1])
+
         layers = []
-        for i in range(len(sizes) - 2):
+        for i in range(1, len(sizes) - 2):
             linear = nn.Linear(sizes[i], sizes[i + 1])
             linear = nn_utils.spectral_norm(linear)
             layers.append(linear)
             layers.append(activation)
-        final_linear = nn.Linear(sizes[-2], sizes[-1])
-        layers.append(final_linear)
-        self.net = nn.Sequential(*layers)
 
-    def forward(
-        self,
-        x,
-    ):
+        final_linear = nn.Linear(sizes[-2], sizes[-1])
+        if full:
+            final_linear = nn_utils.spectral_norm(final_linear)
+        layers.append(final_linear)
+
+        self.rest = nn.Sequential(*layers)
+
+    def forward(self, x):
         """Run a forward pass.
 
         Parameters
@@ -153,8 +169,11 @@ class SpectralNormDNN(nn.Module):
         y : torch.Tensor of shape (..., sizes[-1])
             Network output.
         """
-        return self.net(x)
-
+        h = self.linear_x(x[..., :self.dim_x])
+        if self.has_t:
+            h = h + self.linear_t(x[..., self.dim_x:])
+        return self.rest(self.activation(h))
+    
 
 class LinearNN(nn.Module):
     """Single linear map parameterized by a matrix ``B``.
@@ -375,56 +394,3 @@ def symsqrt(matrix):
     v = v[..., above_cutoff]
     # compose the square root matrix
     return (v * s.sqrt().unsqueeze(-2)) @ v.transpose(-2, -1)
-
-
-class FreezeVarDNN(nn.Module):
-    """Wrapper that fixes one input feature to a constant before inference.
-
-    Parameters
-    ----------
-    dnn : torch.nn.Module
-        Base network receiving ``n_features`` inputs.
-    var_index : int
-        Index of the feature to overwrite.
-    var_value : float
-        Constant value assigned to that feature.
-
-    """
-
-    def __init__(
-        self,
-        net,
-        var_index,
-        var_value,
-    ):
-        super(FreezeVarDNN, self).__init__()
-        self.net = net
-        self.var_index = var_index
-        self.var_value = var_value
-
-    def forward(
-        self,
-        x,
-    ):
-        """Evaluate the wrapped network with one fixed input feature.
-
-        Parameters
-        ----------
-        x : torch.Tensor of shape (batch_size, n_features)
-            Input batch.
-
-        Returns
-        -------
-        y : torch.Tensor of shape (batch_size, n_outputs)
-            Network prediction.
-        """
-        left = x[:, : self.var_index]
-        right = x[:, self.var_index :]
-        frozen = torch.full(
-            (x.shape[0], 1),
-            self.var_value,
-            dtype=x.dtype,
-            device=x.device,
-        )
-        x_frozen = torch.cat((left, frozen, right), dim=1)
-        return self.net(x_frozen)

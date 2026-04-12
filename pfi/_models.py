@@ -14,20 +14,18 @@ class Model(nn.Module, ABC):
         self,
         sizes=None,
         net_cls=SpectralNormDNN,
-        seed=0,
-        activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=True,
+        feature_norm=None,
+        batch_norm="zscore",
         norm_eps=1e-5,
+        **kwargs,
     ):
         super().__init__()
         self.net_ = None
         self.sizes = [128, 128, 128] if sizes is None else list(sizes)
         self.net_cls = net_cls
-        self.seed = seed
-        self.activation = activation
-        self.feature_norm = feature_norm
-        self.batch_norm = batch_norm
+        self.net_kwargs = dict(kwargs)
+        self.feature_norm = "zscore" if feature_norm is True else (None if feature_norm is False else feature_norm)
+        self.batch_norm = "zscore" if batch_norm is True else (None if batch_norm is False else batch_norm)
         self.norm_eps = norm_eps
         self.Ndim_ = None
         self.register_buffer("scale_mean", torch.zeros(0))
@@ -44,7 +42,7 @@ class Model(nn.Module, ABC):
         if self.net_ is None:
             out_dim = int(self.dim_output())
             full_sizes = [int(Xn.shape[-1])] + self.sizes + [out_dim]
-            self.net_ = self.net_cls(full_sizes, seed=self.seed, activation=self.activation)
+            self.net_ = self.net_cls(full_sizes, **self.net_kwargs)
             self.net_ = self.net_.to(device=Xn.device, dtype=Xn.dtype)
         Xn = self._apply_feature_norm(Xn)
         dims = tuple(range(Xn.ndim - 1))
@@ -71,16 +69,29 @@ class Model(nn.Module, ABC):
     def _apply_feature_norm(self, x):
         if not self.feature_norm:
             return x
-        mu = x[...,:self.Ndim_].mean(dim=-1, keepdim=True)
-        sd = x[...,:self.Ndim_].std(dim=-1, keepdim=True, unbiased=True)
-        return (x - 0*mu) / (sd + self.norm_eps)
+        if "zscore" not in self.feature_norm:
+            return x
+
+        x_sp = x[..., : self.Ndim_]
+        center = "nocenter" not in self.feature_norm
+        mu = x_sp.mean(dim=-1, keepdim=True) if center else 0
+        sd = x_sp.std(dim=-1, keepdim=True, unbiased=True)
+        x_sp = (x_sp - mu) / (sd + self.norm_eps)
+        return torch.cat([x_sp, x[..., self.Ndim_ :]], dim=-1)
 
     def _apply_batch_norm(self, x):
         if not self.batch_norm:
             return x
+        if "zscore" not in self.batch_norm:
+            return x
         if self.scale_mean.numel() == 0:
             return x
-        return (x - self.scale_mean) / (self.scale_std + self.norm_eps)
+
+        center = "nocenter" not in self.batch_norm
+        x_out = (x - self.scale_mean) / (self.scale_std + self.norm_eps) if center else x / (self.scale_std + self.norm_eps)
+        if "notime" in self.batch_norm and x.shape[-1] > self.Ndim_:
+            x_out[..., -1] = x[..., -1]
+        return x_out
 
     def _set_scales(self, x):
         x = self._apply_feature_norm(x)

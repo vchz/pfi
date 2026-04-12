@@ -3,7 +3,7 @@
 import torch
 
 from .._models import AutonomousModelMixin, GenericModelMixin, Model
-from ..utils.nns import ConstantNN, SpectralNormDNN
+from ..utils.nns import ConstantNN
 
 
 class OUScore(AutonomousModelMixin, Model):
@@ -14,14 +14,14 @@ class OUScore(AutonomousModelMixin, Model):
         m0,
         S0,
         D,
-        feature_norm=False,
-        batch_norm=False,
+        **kwargs,
     ):
+        kwargs.pop("sizes", None)
+        kwargs.pop("net_cls", None)
         super().__init__(
             sizes=[],
             net_cls=ConstantNN,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
+            **kwargs,
         )
         self.Ndim_ = int(m0.shape[0])
         self.register_buffer("S0", S0)
@@ -63,28 +63,28 @@ class DSMScore(GenericModelMixin, Model):
 
     def __init__(
         self,
-        sizes=None,
-        net_cls=SpectralNormDNN,
-        seed=0,
-        activation=torch.nn.ELU(),
         noise_lvl=0.0,
-        feature_norm=False,
-        batch_norm=True,
+        **kwargs,
     ):
-        kwargs = dict(
-            sizes=sizes,
-            net_cls=net_cls,
-            seed=seed,
-            activation=activation,
-            feature_norm=feature_norm,
-            batch_norm=batch_norm,
-        )
         super().__init__(**kwargs)
         self.noise_lvl = float(noise_lvl)
 
     def dim_output(self):
-        return self.Ndim_ - 1
+        return self.Ndim_-1
 
+    def _apply_feature_norm(self, x):
+        if not self.feature_norm:
+            return x
+        if "zscore" not in self.feature_norm:
+            return x
+
+        x_sp = x[..., : self.Ndim_-1]
+        center = "nocenter" not in self.feature_norm
+        mu = x_sp.mean(dim=-1, keepdim=True) if center else 0
+        sd = x_sp.std(dim=-1, keepdim=True, unbiased=True)
+        x_sp = (x_sp - mu) / (sd + self.norm_eps)
+        return torch.cat([x_sp, x[..., self.Ndim_ -1 :]], dim=-1)
+    
     def forward(self, Xtrain):
         if self.training:
             if Xtrain.shape[-1] < 2:

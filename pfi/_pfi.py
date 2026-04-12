@@ -75,13 +75,13 @@ def make_score_estimator(
     """
     if score_model is None:
         score_model = DSMScore(
-            sizes=[128, 128, 128],
+            sizes=[128, 128, 128, 128],
             net_cls=SpectralNormDNN,
             seed=seed,
             activation=nn.ELU(),
             noise_lvl=0.01,
-            feature_norm=False,
-            batch_norm=True,
+            feature_norm=None,
+            batch_norm="zscore",
         )
 
     solver_kwargs_ = {} if solver_kwargs is None else dict(solver_kwargs)
@@ -139,8 +139,8 @@ def make_flow_estimator(
             seed=seed,
             activation=nn.ELU(),
             lx=0.3,
-            feature_norm=True,
-            batch_norm=True,
+            feature_norm="zscore-nocenter",
+            batch_norm="zscore",
         )
     elif score is not None and hasattr(flow_model, "score"):
         flow_model.score = score
@@ -148,6 +148,9 @@ def make_flow_estimator(
     solver_kwargs_ = {} if solver_kwargs is None else dict(solver_kwargs)
     solver_kwargs_.setdefault("n_epochs", 2000)
     solver_kwargs_.setdefault("lr", 1e-3)
+    solver_kwargs_.setdefault("fac", 4)
+    solver_kwargs_.setdefault("lr", 512)
+    solver_kwargs_.setdefault("nb", 1)
     solver_kwargs_["verbose"] = verbose
 
     return FlowModel(

@@ -5,7 +5,7 @@ import torch
 from torch.optim.lr_scheduler import MultiStepLR
 from tqdm import tqdm
 
-from ...utils.nns import FastTensorDataLoader, FreezeVarDNN, loss_grad_std
+from ...utils.nns import FastTensorDataLoader, loss_grad_std
 
 
 def geometric_sequence(
@@ -284,25 +284,3 @@ def generate_data_DSM(
     sol = torch.reshape(sol, (nsamples, ndim + 2))
 
     return sol
-
-
-def freeze_dsm_score(
-    net,
-    noise_lvl=0.1,
-):
-    """Freeze the DSM noise-conditioning variable for flow inference.
-
-    Parameters
-    ----------
-    net : torch.nn.Module
-        Noise-conditional score network taking ``(x, sigma, t)`` inputs.
-    noise_lvl : float, default=0
-        Noise level used to freeze the sigma-conditioning input.
-
-    Returns
-    -------
-    frozen : torch.nn.Module
-        Wrapper taking ``(x, t)`` and injecting the fixed sigma value before
-        the time coordinate.
-    """
-    return FreezeVarDNN(net=net, var_index=-1, var_value=noise_lvl)

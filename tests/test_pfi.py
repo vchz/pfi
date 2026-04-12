@@ -71,8 +71,8 @@ def test_pfm_toggle_switch():
         net_cls=DNN,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=True,
+        feature_norm=None,
+        batch_norm="zscore",
         noise_lvl=0.1,
     )
     flow_model = CLEFlow(
@@ -82,16 +82,16 @@ def test_pfm_toggle_switch():
         seed=0,
         activation=nn.ELU(),
         lx=1.0,
-        feature_norm=False,
-        batch_norm=False,
+        feature_norm=None,
+        batch_norm=None,
     )
     growth_model = AutonomousGrowth(
         sizes=[Np_flow] * 4,
         net_cls=DNN,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=False,
+        feature_norm=None,
+        batch_norm=None,
     )
 
     est = make_pfi_estimator(
@@ -135,8 +135,8 @@ def test_upfi_toggle_switch():
         net_cls=DNN,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=True,
+        feature_norm=None,
+        batch_norm="zscore",
         noise_lvl=0.1,
     )
     flow_model = CLEFlow(
@@ -146,16 +146,16 @@ def test_upfi_toggle_switch():
         seed=0,
         activation=nn.ELU(),
         lx=1.0,
-        feature_norm=False,
-        batch_norm=False,
+        feature_norm=None,
+        batch_norm=None,
     )
     growth_model = AutonomousGrowth(
         sizes=[Np_flow] * 4,
         net_cls=DNN,
         seed=0,
         activation=nn.ELU(),
-        feature_norm=False,
-        batch_norm=False,
+        feature_norm=None,
+        batch_norm=None,
     )
 
     est = make_pfi_estimator(

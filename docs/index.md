@@ -100,7 +100,7 @@ References for `upfi` include `https://doi.org/10.48550/arXiv.2505.13197` and `h
 
 ### Hyperparameter optimization
 
-`hyperopt_pfi` is present in the API but is currently not implemented in this version.
+We will soon reimplement an hyperoptimization function `hyperopt_pfi`.
 
 ## Low level usage
 
