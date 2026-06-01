@@ -5,9 +5,14 @@ import torch
 from .._models import AutonomousModelMixin, GenericModelMixin, Model
 from ..utils.nns import ConstantNN
 
+__all__ = [
+    "OUScore",
+    "DSMScore",
+]
+
 
 class OUScore(AutonomousModelMixin, Model):
-    """Analytical score function for Gaussian Ornstein-Uhlenbeck dynamics."""
+    """Analytical score model for Ornstein-Uhlenbeck dynamics."""
 
     def __init__(
         self,
@@ -16,11 +21,29 @@ class OUScore(AutonomousModelMixin, Model):
         D,
         **kwargs,
     ):
+        """Initialize OU analytical score model.
+
+        Parameters
+        ----------
+        m0 : torch.Tensor, shape (Ndim,)
+            Initial mean.
+        S0 : torch.Tensor, shape (Ndim, Ndim)
+            Initial covariance.
+        D : torch.Tensor, shape (Ndim, Ndim)
+            Diffusion matrix.
+        **kwargs : dict
+            Forwarded to :class:`pfi._models.Model` after overriding
+            ``net_cls`` with :class:`pfi.utils.nns.ConstantNN`.
+        """
         kwargs.pop("sizes", None)
         kwargs.pop("net_cls", None)
-        super().__init__(
+        kwargs.pop("feature_norm", None)
+        kwargs.pop("batch_norm", None)
+        super(OUScore, self).__init__(
             sizes=[],
             net_cls=ConstantNN,
+            feature_norm=False,
+            batch_norm=False,
             **kwargs,
         )
         self.Ndim_ = int(m0.shape[0])
@@ -29,11 +52,24 @@ class OUScore(AutonomousModelMixin, Model):
         self.register_buffer("D", D)
 
     def dim_output(self):
+        """Return output dimension of the constant matrix network."""
         return self.Ndim_
 
     def forward(self, Xtrain):
+        """Evaluate OU score at ``Xtrain``.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor, shape (batch_size, Ndim + 1)
+            Input states with time in the last column.
+
+        Returns
+        -------
+        torch.Tensor, shape (batch_size, Ndim)
+            Score values ``∇_x log p_t(x)``.
+        """
         B = self.evaluate_net(Xtrain)
-        xt = Xtrain[:, 0:self.Ndim_]
+        xt = Xtrain[:, : self.Ndim_]
         t = Xtrain[:, -1]
 
         t_unique, inv = torch.unique(t, sorted=True, return_inverse=True)
@@ -59,40 +95,89 @@ class OUScore(AutonomousModelMixin, Model):
 
 
 class DSMScore(GenericModelMixin, Model):
-    """Noise-conditional score wrapper with inference-time sigma fallback."""
+    """Noise-conditional score model with inference-time sigma fallback."""
 
     def __init__(
         self,
         noise_lvl=0.0,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        """Initialize DSM score wrapper.
+
+        Parameters
+        ----------
+        noise_lvl : float, default=0.0
+            Default sigma used at inference when sigma is not provided.
+        **kwargs : dict
+            Forwarded to :class:`pfi._models.Model`.
+        """
+        super(DSMScore, self).__init__(**kwargs)
         self.noise_lvl = float(noise_lvl)
 
     def dim_output(self):
-        return self.Ndim_-1
+        """Return spatial score output dimension."""
+        return self.Ndim_ - 1
 
     def _apply_feature_norm(self, x):
-        if not self.feature_norm:
-            return x
-        if "zscore" not in self.feature_norm:
+        """Apply feature normalization on spatial dimensions only.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor where the final dimensions are ordered as
+            ``[..., x_1, ..., x_ndim, sigma, t]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Normalized tensor with sigma/time dimensions left unchanged.
+        """
+        if not self.feature_norm or "zscore" not in self.feature_norm:
             return x
 
-        x_sp = x[..., : self.Ndim_-1]
+        x_sp = x[..., : self.Ndim_ - 1]
         center = "nocenter" not in self.feature_norm
         mu = x_sp.mean(dim=-1, keepdim=True) if center else 0
         sd = x_sp.std(dim=-1, keepdim=True, unbiased=True)
-        x_sp = (x_sp - mu) / (sd + self.norm_eps)
-        return torch.cat([x_sp, x[..., self.Ndim_ -1 :]], dim=-1)
-    
+        x_sp = (x_sp - mu) / (sd + 1e-5)
+        return torch.cat([x_sp, x[..., self.Ndim_ - 1 :]], dim=-1)
+
     def forward(self, Xtrain):
+        """Evaluate DSM score.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor
+            Input tensor.
+            In training mode, the last dimension must be ``ndim+2`` with
+            layout ``[x_1, ..., x_ndim, sigma, t]``.
+            In evaluation mode, the last dimension can be either ``ndim+2``
+            (explicit sigma) or ``ndim+1`` (sigma injected from
+            ``self.noise_lvl``).
+
+        Returns
+        -------
+        torch.Tensor
+            Predicted score on spatial coordinates, shape ``(..., ndim)``.
+
+        Raises
+        ------
+        ValueError
+            If input dimensionality does not match mode requirements.
+
+        Training mode expects ``ndim+2`` features
+        ``[x_1, ..., x_ndim, sigma, t]``.
+        In evaluation mode, inputs can be either ``ndim+2`` (explicit sigma)
+        or ``ndim+1`` (sigma inserted from ``noise_lvl``).
+        """
         if self.training:
-            if Xtrain.shape[-1] < 2:
+            if Xtrain.shape[-1] != self.Ndim_ + 1:
                 raise ValueError("DSMScore expects ndim+2 features during training.")
             return self.evaluate_net(Xtrain)
 
         if Xtrain.shape[-1] == self.Ndim_ + 1:
             return self.evaluate_net(Xtrain)
+
         if Xtrain.shape[-1] == self.Ndim_:
             sigma = torch.full(
                 (*Xtrain.shape[:-1], 1),
@@ -102,4 +187,5 @@ class DSMScore(GenericModelMixin, Model):
             )
             Xin = torch.cat([Xtrain[..., :-1], sigma, Xtrain[..., -1:]], dim=-1)
             return self.evaluate_net(Xin)
+
         raise ValueError("DSMScore expects ndim+1 or ndim+2 features in eval mode.")

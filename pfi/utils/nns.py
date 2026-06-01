@@ -115,7 +115,9 @@ class SpectralNormDNN(nn.Module):
     seed : int, default=0
         Random seed for layer initialization.
     dim_x: int, default=None
-        The dimension of the x variables to apply spectral norm
+        The dimension of the x variables to apply spectral norm.
+        These are always the first dim_x dimensions of the data.
+        The last dimensions are assumed to be 'time-like'.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
     """

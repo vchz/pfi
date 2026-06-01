@@ -127,6 +127,7 @@ def load_data(
     genes,
     time_key,
     cell_type_key=None,
+    exclude_times=None,
     seed=0,
     normalize=False,
     plot_total_counts=False,
@@ -152,6 +153,9 @@ def load_data(
         Name of the observation column storing time labels.
     cell_type_key : str, default=None
         Name of the observation column storing cell-type labels.
+    exclude_times : scalar or sequence, default=None
+        Time value(s) to exclude before filtering and subsampling.
+        If ``None``, all time points are kept.
     seed : int, default=0
         Random seed for snapshot subsampling.
     normalize : bool, default=False
@@ -182,11 +186,22 @@ def load_data(
     if path in DATA_URLS:
         path = fetch(DATA_URLS[path])
     adata = sc.read_h5ad(path)
-    expr_full = adata.X
-    expr_full = expr_full.toarray() if hasattr(expr_full, "toarray") else np.asarray(expr_full)
-    total_full = expr_full.sum(axis=1, keepdims=True)
+
+    if exclude_times is not None:
+        excluded = np.atleast_1d(exclude_times)
+        time_vals = np.asarray(adata.obs[time_key])
+        keep_time = ~np.isin(time_vals, excluded)
+        n_excluded = int((~keep_time).sum())
+        if n_excluded > 0:
+            print(f"[load_data] excluded {n_excluded} cells from time points: {list(excluded)}")
+        adata = adata[keep_time].copy()
+        if adata.n_obs == 0:
+            raise ValueError("No cells left after applying exclude_times.")
 
     if normalize:
+        expr_full = adata.X
+        expr_full = expr_full.toarray() if hasattr(expr_full, "toarray") else np.asarray(expr_full)
+        total_full = expr_full.sum(axis=1, keepdims=True)
         adata.X = (1e4 * expr_full) / (total_full + 1e-12)
 
     expr_all = adata[:, genes].X
@@ -233,12 +248,13 @@ def load_data(
 
     unique_times = np.asarray(adata.obs[time_key].unique())
     samples = np.zeros((len(unique_times), nsamples, n_genes), dtype=np.float32)
+    ind_array = np.zeros((len(unique_times), nsamples), dtype=int) if cell_type_key is not None else None
 
     if cell_type_key is not None:
         cell_type_categories = list(adata.obs[cell_type_key].cat.categories)
         print(cell_type_categories)
         cell_type_to_int = {ct: i for i, ct in enumerate(cell_type_categories)}
-    ind_array = np.zeros((len(unique_times), nsamples), dtype=int)
+
     rng = np.random.default_rng(seed)
 
     for k, time_point in enumerate(unique_times):
@@ -496,6 +512,44 @@ def assign_OT(x, y, method="exact", reg=0.1, sym=False, return_indices=False):
     return x[i_idx], y[j_idx]
 
 
+def map_celltypes_knn(source_x, target_x, target_labels, n_neighbors=15):
+    """Transfer cell-type labels from target cells to source cells with kNN.
+
+    Parameters
+    ----------
+    source_x : array-like of shape (n_source, n_genes)
+        Source expression matrix receiving transferred labels.
+    target_x : array-like of shape (n_target, n_genes)
+        Target expression matrix used as kNN reference.
+    target_labels : array-like of shape (n_target,)
+        Cell-type labels for ``target_x``.
+    n_neighbors : int, default=15
+        Number of neighbors in the classifier.
+
+    Returns
+    -------
+    source_labels : ndarray of shape (n_source,)
+        Predicted labels for ``source_x`` in target-label space.
+    """
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.preprocessing import StandardScaler
+
+    source_x = np.asarray(source_x, dtype=np.float32)
+    target_x = np.asarray(target_x, dtype=np.float32)
+    target_labels = np.asarray(target_labels)
+
+    source_x = np.log1p(source_x)
+    target_x = np.log1p(target_x)
+
+    scaler = StandardScaler()
+    target_x_scaled = scaler.fit_transform(target_x)
+    source_x_scaled = scaler.transform(source_x)
+
+    knn = KNeighborsClassifier(n_neighbors=n_neighbors, weights='distance', metric="euclidean")
+    knn.fit(target_x_scaled, target_labels)
+    return knn.predict(source_x_scaled)
+
+
 def compute_correlations(x, y):
     """Compute paired summary metrics between two arrays.
 
@@ -512,6 +566,7 @@ def compute_correlations(x, y):
         Dictionary with ``pearson``, ``spearman``, ``energy_distance`` and
         ``rmse_l2`` entries. The energy distance is computed with
         ``geomloss.SamplesLoss('energy')`` on the full sample arrays.
+        For rmse the reference profile is y
     """
     import geomloss
     from scipy.stats import pearsonr, spearmanr
@@ -527,7 +582,7 @@ def compute_correlations(x, y):
         torch.as_tensor(x_full, dtype=torch.float32),
         torch.as_tensor(y_full, dtype=torch.float32),
     ).item()
-    rmse = np.mean((x - y) ** 2)/np.mean(x**2)
+    rmse = np.mean((x - y) ** 2)/np.mean(y**2)
 
     return {
         "pearson": pearson,

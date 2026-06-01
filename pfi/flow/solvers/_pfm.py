@@ -72,7 +72,7 @@ def PFM_(
     interp=None,
     growth_model=None,
     precomputed_traj=None,
-    bs=None,
+    bs=512,
     fac=4,
     nb=1,
     n_epochs=2000,
