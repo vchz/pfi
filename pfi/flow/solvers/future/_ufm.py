@@ -161,9 +161,11 @@ def UFM_OT_(
         .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
     )
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-    net.init_model(scale_data)
-    if growth_model is not None:
-        growth_model.init_model(dist_tensor)
+    
+    if hasattr(net, 'init_model'):
+        net.init_model(scale_data)
+    if growth_model is not None and hasattr(growth_model, 'init_model'):
+        growth_model.init_model(scale_data)
 
     batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot)
     nsnaps, nsamples, ndim = batch_ot_samples.shape
@@ -356,9 +358,11 @@ def UFM_UOT_(
         .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
     )
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-    net.init_model(scale_data)
-    if growth_model is not None:
-        growth_model.init_model(dist_tensor)
+
+    if hasattr(net, 'init_model'):
+        net.init_model(scale_data)
+    if growth_model is not None and hasattr(growth_model, 'init_model'):
+        growth_model.init_model(scale_data)
 
     batch_ot_samples, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot)
     _, nsamples, ndim = batch_ot_samples.shape

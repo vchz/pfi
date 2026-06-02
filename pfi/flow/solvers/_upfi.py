@@ -76,7 +76,7 @@ def UPFI_(
     growth_model=None,
     n_epochs=2000,
     lr=1e-3,
-    bs=None,
+    bs=512,
     n_steps=2,
     reg_wfr=1,
     reg=0.1,
@@ -141,12 +141,16 @@ def UPFI_(
         .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
     )
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-    net.init_model(scale_data)
-    if growth_model is not None:
+    
+    if hasattr(net, 'init_model'):
+        net.init_model(scale_data)
+    if growth_model is not None and hasattr(growth_model, 'init_model'):
         growth_model.init_model(scale_data)
 
     if bs is None:
-        bs = max(1, nsamples // 4)
+        bs = nsamples
+    bs = min(int(bs), nsamples)
+
     mass_vec = torch.tensor([d.shape[0] / dist[0].shape[0] for d in dist], dtype=dtype, device=device)
 
     drift_net = net.to(device)

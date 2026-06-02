@@ -148,8 +148,9 @@ def PFM_(
     )
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
 
-    net.init_model(scale_data)
-    if growth_model is not None:
+    if hasattr(net, 'init_model'):
+        net.init_model(scale_data)
+    if growth_model is not None and hasattr(growth_model, 'init_model'):
         growth_model.init_model(scale_data)
 
     if precomputed_traj is None:
@@ -168,7 +169,10 @@ def PFM_(
     data_nodes = times[None, :].repeat(nsamples, 1).contiguous()
     uniform_nodes = uniform_kind[None, :].repeat(nsamples, 1).contiguous()
 
-    batch_size = nsamples if bs is None else bs
+    if bs is None:
+        bs = nsamples
+    batch_size = min(int(bs), nsamples)
+
     uniform_batch = uniform_kind[None, :].repeat(batch_size, 1).contiguous()
     data_batch = times[None, :].repeat(batch_size, 1).contiguous()
 

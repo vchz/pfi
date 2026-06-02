@@ -90,11 +90,11 @@ def DSM_(
     dist,
     times,
     net,
-    L=10,
-    n_epochs=2000,
+    L=5,
+    n_epochs=5000,
     bs=None,
-    adp_flag=1,
-    lr=1e-4,
+    adp_flag=0,
+    lr=5e-4,
     scheduler_kwargs=None,
     verbose=True,
 ):
@@ -110,15 +110,15 @@ def DSM_(
     net : torch.nn.Module
         Score network that accepts inputs of shape
         ``(nsnaps, L, batch_size, ndim + 2)`` after batching.
-    L : int, default=10
+    L : int, default=5
         Number of noise levels.
-    n_epochs : int, default=2000
+    n_epochs : int, default=5000
         Number of optimization epochs.
     bs : int or None, default=None
         Mini-batch size over sample dimension. If ``None``, uses all samples.
     adp_flag : int, default=0
         If set to ``1``, enable adaptive per-time weighting.
-    lr : float, default=1e-4
+    lr : float, default=5e-4
         Learning rate.
     scheduler_kwargs : dict or None, default=None
         Keyword arguments used to configure
@@ -144,6 +144,7 @@ def DSM_(
     nsnaps, nsamples, ndim = dist.shape
     if bs is None:
         bs = nsamples
+    bs = min(int(bs), nsamples)
 
     x_train, x_data, _, _, sigma = generate_noisy_training_data_batch(
         dist,

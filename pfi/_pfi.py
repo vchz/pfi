@@ -29,7 +29,9 @@ class PFI:
         _ = y
         self.score_estimator.fit(X)
         self.flow_estimator.flow.score = self.score_estimator.model_
-        X_flow = self.score_estimator.sample(X) if self.fit_on_score_samples else X
+        X_flow = X
+        if self.fit_on_score_samples:
+            X_flow = self.score_estimator.sample(X)
         self.flow_estimator.fit(X_flow)
         return self
 
@@ -41,9 +43,9 @@ class PFI:
         """Sample trajectories with the fitted flow estimator."""
         return self.flow_estimator.sample(X, Dt=Dt, dt=dt, stoch=stoch)
 
-    def score(self, X, y, stoch=False, dt=0.01):
+    def score(self, X, y, dt=0.01, stoch=False):
         """Compute flow-stage energy distance."""
-        return self.flow_estimator.score(X, y, stoch=stoch, dt=dt)
+        return self.flow_estimator.score(X, y, dt=dt, stoch=stoch)
 
 
 def make_score_estimator(
@@ -52,7 +54,6 @@ def make_score_estimator(
     solver_kwargs=None,
     device="cpu",
     seed=0,
-    verbose=True,
 ):
     """Create a configured ``ScoreModel``.
 
@@ -70,8 +71,6 @@ def make_score_estimator(
         Device used by the score estimator.
     seed : int, default=0
         Random seed used when the default score model is built.
-    verbose : bool, default=True
-        Verbosity passed to the solver.
     """
     if score_model is None:
         score_model = DSMScore(
@@ -81,15 +80,11 @@ def make_score_estimator(
             activation=nn.ELU(),
             noise_lvl=0.01,
             feature_norm=False,
-            batch_norm=NFalse,
+            batch_norm=False,
         )
 
     solver_kwargs_ = {} if solver_kwargs is None else dict(solver_kwargs)
-    solver_kwargs_.setdefault("n_epochs", 4000)
-    solver_kwargs_.setdefault("lr", 5e-4)
-    solver_kwargs_.setdefault("L", 5)
-    solver_kwargs_.setdefault("adp_flag", 0)
-    solver_kwargs_["verbose"] = verbose
+    solver_kwargs_.setdefault("verbose", False)
 
     return ScoreModel(
         model=score_model,
@@ -107,7 +102,6 @@ def make_flow_estimator(
     device="cpu",
     score=None,
     seed=0,
-    verbose=True,
 ):
     """Create a configured ``FlowModel``.
 
@@ -129,8 +123,6 @@ def make_flow_estimator(
         Score model attached to the flow model.
     seed : int, default=0
         Random seed used when the default flow model is built.
-    verbose : bool, default=True
-        Verbosity passed to the solver.
     """
     if flow_model is None:
         flow_model = CLEFlow(
@@ -147,9 +139,7 @@ def make_flow_estimator(
         flow_model.score = score
 
     solver_kwargs_ = {} if solver_kwargs is None else dict(solver_kwargs)
-    solver_kwargs_.setdefault("n_epochs", 2000)
-    solver_kwargs_.setdefault("lr", 1e-3)
-    solver_kwargs_["verbose"] = verbose
+    solver_kwargs_.setdefault("verbose", False)
 
     return FlowModel(
         flow=flow_model,
@@ -171,7 +161,6 @@ def make_pfi_estimator(
     fit_on_score_samples=False,
     device="cpu",
     seed=0,
-    verbose=True,
 ):
     """Create a configured composite ``PFI`` estimator."""
     score_estimator = make_score_estimator(
@@ -180,7 +169,6 @@ def make_pfi_estimator(
         solver_kwargs=s_solver_kwargs,
         device=device,
         seed=seed,
-        verbose=verbose,
     )
     flow_estimator = make_flow_estimator(
         flow_model=flow_model,
@@ -190,7 +178,6 @@ def make_pfi_estimator(
         device=device,
         score=None,
         seed=seed,
-        verbose=verbose,
     )
     return PFI(
         score_estimator=score_estimator,

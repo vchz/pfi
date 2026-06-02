@@ -100,7 +100,11 @@ def test_pfm_toggle_switch():
         growth_model=growth_model,
         s_solver="dsm",
         f_solver="pfm",
-        s_solver_kwargs={"L": 10, "bs": None, "adp_flag": 1, "lr": 5e-4, "n_epochs": 2000},
+        s_solver_kwargs={"L": 10, 
+                         "bs": None, 
+                         "adp_flag": 1, 
+                         "lr": 5e-4, 
+                         "n_epochs": 2000},
         f_solver_kwargs={
             "interp": ChebyshevInterpolant(),
             "nb": 1,
@@ -111,7 +115,6 @@ def test_pfm_toggle_switch():
         fit_on_score_samples=False,
         device=device,
         seed=0,
-        verbose=False,
     )
     est.flow_estimator.flow.vol = TOGGLE_SWITCH_VOL
     est.fit(X)
@@ -164,12 +167,19 @@ def test_upfi_toggle_switch():
         growth_model=growth_model,
         s_solver="dsm",
         f_solver="upfi",
-        s_solver_kwargs={"L": 10, "bs": None, "adp_flag": 1, "lr": 5e-4, "n_epochs": 2000},
-        f_solver_kwargs={"n_steps": 2, "reg_wfr": 1, "reach": 20.0, "lr": 1e-3, "n_epochs": 2000},
+        s_solver_kwargs={"L": 10, 
+                         "bs": None, 
+                         "adp_flag": 1, 
+                         "lr": 5e-4, 
+                         "n_epochs": 2000},
+        f_solver_kwargs={"n_steps": 2, 
+                         "reg_wfr": 1, 
+                         "reach": 20.0, 
+                         "lr": 1e-3, 
+                         "n_epochs": 2000},
         fit_on_score_samples=False,
         device=device,
         seed=0,
-        verbose=False,
     )
     est.flow_estimator.flow.vol = TOGGLE_SWITCH_VOL
     est.fit(X)

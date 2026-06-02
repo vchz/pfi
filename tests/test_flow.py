@@ -61,7 +61,11 @@ def test_flow_OU():
         flow=flow_model,
         growth=None,
         solver="pfm",
-        solver_kwargs=dict(interp=interp, n_epochs=5000, lr=1e-2),
+        solver_kwargs={
+            'interp': interp, 
+            'n_epochs': 5000, 
+            'lr': 1e-2,
+        },
         device=device,
     )
     flow_reg.fit(X)
