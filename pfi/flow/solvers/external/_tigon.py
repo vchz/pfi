@@ -1,6 +1,5 @@
 """TIGON external solver placeholder."""
 
-
 def TIGON_(dist, times, flow_model, growth_model=None, **solver_kwargs):
     """Placeholder TIGON solver.
 

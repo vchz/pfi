@@ -8,7 +8,6 @@ from ...utils.nns import loss_grad_std
 from ..couplings import pairwise_OT
 from ..interpolants import ChebyshevInterpolant, LinearInterpolant, select_best_lambda
 
-
 def compute_conditional_distributions(
     interp,
     dist,
@@ -64,7 +63,6 @@ def compute_conditional_distributions(
     ytrain[:, :ndim] = dx_interp.reshape(batch_size * n_eval, ndim)
     return xtrain, ytrain
 
-
 def PFM_(
     dist,
     times,
@@ -101,7 +99,7 @@ def PFM_(
     precomputed_traj : torch.Tensor or None, default=None
         Optional precomputed OT trajectories with shape
         ``(n_snaps, n_samples, ndim)``. If ``None``, trajectories are
-        computed internally with :func:`pairwise_OT`.
+        computed internally with ``pairwise_OT``.
     bs : int or None, default=None
         Number of sampled trajectories per optimization step. If ``None``,
         use all sampled trajectories.
@@ -258,6 +256,5 @@ def PFM_(
             pbar.set_postfix(loss=f"{total_loss.item():.3e}", lr=f"{optimizer.param_groups[0]['lr']:.2e}")
 
     return drift_net, growth_model, loss_hist
-
 
 __all__ = ["PFM_", "compute_conditional_distributions"]

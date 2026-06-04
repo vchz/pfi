@@ -14,9 +14,19 @@ TOGGLE_SWITCH_MODEL_PARAMS = np.array([2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 4.0])
 TOGGLE_SWITCH_GROWTH = 2.0
 TOGGLE_SWITCH_VOL = 4.0
 
-
 def _get_toggle_switch_data(seed):
-    """Generate toggle-switch training data for a fixed simulation setup."""
+    """Generate toggle-switch training data for a fixed simulation setup.
+
+    Parameters
+    ----------
+    seed : int
+        Random seed used for the simulation.
+
+    Returns
+    -------
+    ndarray
+        Time-augmented toggle-switch samples.
+    """
     ndim = 2
     nsamples = 4000
     k_snaps = 5
@@ -35,9 +45,19 @@ def _get_toggle_switch_data(seed):
     )
     return X_from_snapshots(samples_full, tt)
 
-
 def _get_toggle_switch_errors(flow_estimator):
-    """Compute relative MSE on force and growth over a fixed grid."""
+    """Compute relative MSE on force and growth over a fixed grid.
+
+    Parameters
+    ----------
+    flow_estimator : pfi.flow.FlowEstimator
+        Fitted flow estimator.
+
+    Returns
+    -------
+    tuple of float
+        Relative MSE on the inferred force and growth.
+    """
     n_grid = 50
     lim = 4.0
     gx = np.linspace(0.0, lim, n_grid)
@@ -59,8 +79,8 @@ def _get_toggle_switch_errors(flow_estimator):
     growth_rel_mse = np.mean((growth_true - growth_inf) ** 2) / np.mean(growth_true ** 2)
     return force_rel_mse, growth_rel_mse
 
-
 def test_pfm_toggle_switch():
+    """Fit the composite estimator with PFM on toggle-switch data."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X = _get_toggle_switch_data(seed=0)
 
@@ -126,8 +146,8 @@ def test_pfm_toggle_switch():
     assert force_rel_mse < 0.08
     assert growth_rel_mse < 0.05
 
-
 def test_upfi_toggle_switch():
+    """Fit the composite estimator with UPFI on toggle-switch data."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X = _get_toggle_switch_data(seed=0)
 

@@ -12,11 +12,12 @@ from ._pfi import (
     make_pfi_estimator,
     make_score_estimator,
 )
-from .score.models import DSMScore
+from . import base
 
 __version__ = '0.1'
 
 _submodules = [
+    'base',
     'flow',
     'score',
     'utils',
@@ -28,9 +29,7 @@ __all__ = _submodules + [
     'make_score_estimator',
     'make_flow_estimator',
     'make_pfi_estimator',
-    'DSMScore',
 ]
-
 
 def __dir__():
     """List dynamic module attributes.
@@ -41,7 +40,6 @@ def __dir__():
         Public names exposed by the package.
     """
     return __all__
-
 
 def __getattr__(name):
     """Dynamically import known submodules on attribute access.

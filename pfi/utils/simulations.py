@@ -2,7 +2,6 @@
 
 import numpy as np
 
-
 def toggle_switch(
     x,
     model_params,
@@ -28,7 +27,6 @@ def toggle_switch(
     f[:, 1] = (a2 * (xn[:, 1]) / (k2 ** n + xn[:, 1])) + b2 * (k2 ** n) / (k2 ** n + xn[:, 0])
     return f
 
-
 def g_rate(
     x1,
     x2,
@@ -51,8 +49,6 @@ def g_rate(
         Growth rate for each sample.
     """
     return gr * (1.0 * (x2 ** 2) / (1 + x2 ** 2) + 0.0 * (x1 ** 2) / (1 + x1 ** 2))
-
-
 
 def simulate_ornstein_uhlenbeck(
     Om,
@@ -111,7 +107,6 @@ def simulate_ornstein_uhlenbeck(
         samples.append(traj.T.copy())
 
     return samples, tt
-
 
 def simulate_toggle_switch(
     model_params,

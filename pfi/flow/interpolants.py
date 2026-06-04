@@ -6,9 +6,10 @@ import numpy as np
 import torch
 import torchcubicspline
 
-
 class Interpolant(ABC):
-    """Abstract base class for trajectory interpolants."""
+    """Abstract base class for trajectory interpolants.
+
+    """
 
     @abstractmethod
     def fit(self, nodes_fit, dist):
@@ -44,9 +45,17 @@ class Interpolant(ABC):
             Time derivatives at ``t_eval``.
         """
 
-
 class LinearInterpolant(Interpolant):
-    """Batched piecewise-linear interpolant."""
+    """Batched piecewise-linear interpolant.
+
+    Attributes
+    ----------
+    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
+        Fit nodes stored during ``fit``.
+    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
+        Trajectory values stored during ``fit``.
+
+    """
 
     def fit(self, nodes_fit, dist):
         """Store linear interpolation support points.
@@ -102,7 +111,6 @@ class LinearInterpolant(Interpolant):
         deriv = torch.where(delta_t != 0, (y1 - y0) / delta_t, torch.zeros_like(y0))
         return interp, deriv
 
-
 def chebyshev_basis_matrix(s, degree):
     """Compute first-kind Chebyshev basis values.
 
@@ -125,7 +133,6 @@ def chebyshev_basis_matrix(s, degree):
     for n in range(2, degree + 1):
         vals.append(2 * s * vals[-1] - vals[-2])
     return torch.stack(vals, dim=-1)
-
 
 def chebyshev_U_basis_matrix(s, degree):
     """Compute second-kind Chebyshev basis values.
@@ -151,7 +158,6 @@ def chebyshev_U_basis_matrix(s, degree):
     for k in range(2, degree):
         vals.append(2 * s * vals[-1] - vals[-2])
     return torch.stack(vals, dim=-1)
-
 
 def batched_chebyshev_interpolate(
     t_points,
@@ -227,12 +233,36 @@ def batched_chebyshev_interpolate(
     coeffs = torch.linalg.solve(lhs, rhs).float()
 
     def interpolant(t_eval):
+        """Evaluate the fitted Chebyshev interpolant.
+
+        Parameters
+        ----------
+        t_eval : torch.Tensor of shape (batch_size, n_eval)
+            Evaluation times.
+
+        Returns
+        -------
+        torch.Tensor of shape (batch_size, n_eval, ndim)
+            Interpolated trajectory values.
+        """
         t_eval = t_eval.to(dtype=torch.float32, device=device)
         s_eval = (2 * t_eval - (a + bmax)) / (bmax - a)
         basis = chebyshev_basis_matrix(s_eval, degree)
         return torch.einsum("bnd,bdc->bnc", basis, coeffs)
 
     def derivative(t_eval):
+        """Evaluate time derivatives of the fitted Chebyshev interpolant.
+
+        Parameters
+        ----------
+        t_eval : torch.Tensor of shape (batch_size, n_eval)
+            Evaluation times.
+
+        Returns
+        -------
+        torch.Tensor of shape (batch_size, n_eval, ndim)
+            Time derivatives of the interpolated trajectories.
+        """
         t_eval = t_eval.to(dtype=torch.float32, device=device)
         s_eval = (2 * t_eval - (a + bmax)) / (bmax - a)
         dsdt = (2 / (bmax - a)).float().unsqueeze(-1)
@@ -245,18 +275,28 @@ def batched_chebyshev_interpolate(
 
     return coeffs, interpolant, derivative, (a, bmax)
 
-
 class ChebyshevInterpolant(Interpolant):
-    """Regularized Chebyshev interpolant for batched trajectories."""
+    """Regularized Chebyshev interpolant for batched trajectories.
+
+    Parameters
+    ----------
+    reg : float or None, default=None
+        Curvature regularization strength used in ``fit``.
+
+    Attributes
+    ----------
+    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
+        Fit nodes stored during ``fit``.
+    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
+        Trajectory values stored during ``fit``.
+    p_ : callable
+        Interpolant returned by ``batched_chebyshev_interpolate``.
+    p_prime_ : callable
+        Derivative evaluator returned by ``batched_chebyshev_interpolate``.
+
+    """
 
     def __init__(self, reg=None):
-        """Initialize a Chebyshev interpolant.
-
-        Parameters
-        ----------
-        reg : float or None, default=None
-            Curvature regularization strength used in ``fit``.
-        """
         self.reg = reg
 
     def fit(self, nodes_fit, dist):
@@ -304,9 +344,19 @@ class ChebyshevInterpolant(Interpolant):
         """
         return self.p_(t_eval), self.p_prime_(t_eval)
 
-
 class SplineInterpolant(Interpolant):
-    """Batched natural cubic spline interpolant."""
+    """Batched natural cubic spline interpolant.
+
+    Attributes
+    ----------
+    t_fit_ : torch.Tensor of shape (batch_size, n_nodes)
+        Fit nodes stored during ``fit``.
+    y_fit_ : torch.Tensor of shape (batch_size, n_nodes, ndim)
+        Trajectory values stored during ``fit``.
+    spline_ : torchcubicspline.interpolate.NaturalCubicSpline
+        Fitted spline object created during ``fit``.
+
+    """
 
     def fit(self, nodes_fit, dist):
         """Fit natural cubic spline coefficients.
@@ -355,7 +405,6 @@ class SplineInterpolant(Interpolant):
         eval_ = torch.permute(eval_, (1, 0, 2))
         derv_ = torch.permute(derv_, (1, 0, 2))
         return eval_, derv_
-
 
 def select_best_lambda(
     batch_ot_samples,
@@ -416,7 +465,6 @@ def select_best_lambda(
         print(f"[lambda-selection] Vel magnitudes: {vel_mag}")
 
     return best_lambda, lam_arr, vel_mag
-
 
 __all__ = [
     "Interpolant",

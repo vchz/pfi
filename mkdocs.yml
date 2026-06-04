@@ -1,24 +1,36 @@
 site_name: pfi
 site_description: Documentation for the package PFI (Probability Flow Inference).
-site_author: Victor Chardès & Suryanarayana Maddu
+site_author: Victor Chardes & Suryanarayana Maddu
 repo_url: https://github.com/vchz/pfi/
 repo_name: vchz/pfi
+
 theme:
   name: material
   features:
-        - navigation.tabs
-        - navigation.tabs.sticky
-        - toc.integrate
-        - content.action.edit
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - toc.integrate
+    - content.action.edit
   icon:
     repo: fontawesome/brands/github
-edit_uri: blob/main/docs/
+
+edit_uri: blob/main/
+
 extra_css:
   - style/custom_style.css
+
 exclude_docs: |
-    tests/
+  gen_api_docs.py
+  tests/
+
 plugins:
   - search
+  - gen-files:
+      scripts:
+        - docs/gen_api_docs.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+      implicit_index: true
   - mkdocstrings:
       handlers:
         python:
@@ -28,6 +40,7 @@ plugins:
             docstring_section_style: list
             inherited_members: true
             show_root_heading: true
+            show_root_full_path: false
             show_signature: true
             show_source: false
             heading_level: 2
@@ -40,14 +53,11 @@ plugins:
               - "!^__.*__$"
               - "!^_.*"
               - "!forward"
-  - mkdocs-autoapi:
-        autoapi_dir: pfi  
-        autoapi_keep_files: true  
-        autoapi_root: api
-        autoapi_add_nav_entry: false
+
 nav:
   - Getting started: index.md
   - Documentation: api/
+  
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true

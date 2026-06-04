@@ -2,14 +2,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pfi.score import ScoreModel
-from pfi import DSMScore
+from pfi.score import ScoreEstimator
+from pfi.score.models import DSMScore
 from pfi.utils.nns import DNN
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
-
 def test_dsm_OU():
+    """Fit DSM on OU data and check time-wise sample quality."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dt = 0.01
@@ -49,9 +49,10 @@ def test_dsm_OU():
         seed=7,
         activation=nn.ELU(),
         noise_lvl=0.0,
+        batch_norm='zscore'
     ).to(device)
 
-    score_reg = ScoreModel(
+    score_reg = ScoreEstimator(
         model=score_model,
         solver="dsm",
         solver_kwargs={

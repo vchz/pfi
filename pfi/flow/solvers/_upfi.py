@@ -3,7 +3,6 @@
 import torch
 from tqdm import tqdm
 
-
 def sample_minibatch(
     dist,
     bs,
@@ -32,7 +31,6 @@ def sample_minibatch(
         batch[k] = dist[k].index_select(0, idx)
     return batch
 
-
 def _custom_ode_int(
     flow_model,
     growth_model,
@@ -43,7 +41,36 @@ def _custom_ode_int(
     logw0,
     alpha_wfr,
 ):
-    """Integrate one interval with Euler in teacher-forcing mode."""
+    """Integrate one snapshot interval with explicit Euler steps.
+
+    Parameters
+    ----------
+    flow_model : torch.nn.Module
+        Flow model returning deterministic drift for ``stoch=False``.
+    growth_model : torch.nn.Module or None
+        Optional growth model returning a scalar rate.
+    x0 : torch.Tensor of shape (batch_size, ndim)
+        Initial states.
+    t0 : float or torch.Tensor
+        Initial time.
+    t1 : float or torch.Tensor
+        Final time.
+    n_steps : int
+        Number of Euler steps.
+    logw0 : torch.Tensor of shape (batch_size,)
+        Initial log-masses.
+    alpha_wfr : float
+        Relative weight of growth in the regularization term.
+
+    Returns
+    -------
+    x : torch.Tensor of shape (batch_size, ndim)
+        Integrated final states.
+    logw : torch.Tensor of shape (batch_size,)
+        Integrated final log-masses.
+    reg : torch.Tensor of shape ()
+        Accumulated regularization contribution over the interval.
+    """
     batch_size = x0.shape[0]
     delta_t = t1 - t0
     n_steps = max(1, int(n_steps))
@@ -67,7 +94,6 @@ def _custom_ode_int(
         t = t + h
 
     return x, logw, reg.sum()*(t1 - t0)
-
 
 def UPFI_(
     dist,
@@ -217,7 +243,6 @@ def UPFI_(
         )
         fit_loss = fit_vec.sum()
 
-
         total_loss = fit_loss + reg_wfr * reg_loss
         total_loss.backward()
         optimizer.step()
@@ -233,6 +258,5 @@ def UPFI_(
             )
 
     return drift_net, growth_model, loss_hist
-
 
 __all__ = ["UPFI_"]

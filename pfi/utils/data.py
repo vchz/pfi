@@ -15,7 +15,6 @@ DATA_URLS = {
 }
 PFI_DATA_FOLDER = "~/pfi_data"
 
-
 def fetch(url):
     """Fetch a ``.h5ad`` or ``.h5ad.gz`` file into ``PFI_DATA_FOLDER``.
 
@@ -28,6 +27,11 @@ def fetch(url):
     -------
     local_path : str
         Local file path under ``PFI_DATA_FOLDER``.
+
+    Raises
+    ------
+    ValueError
+        If ``url`` does not end with ``.h5ad`` or ``.h5ad.gz``.
     """
     parsed = urlparse(url)
     filename = Path(parsed.path).name
@@ -64,7 +68,6 @@ def fetch(url):
     print(f"[fetch] ready: {target}")
     return str(target)
 
-
 def X_from_snapshots(
     snaps,
     times,
@@ -90,7 +93,6 @@ def X_from_snapshots(
         X_list.append(np.hstack([xk, tk]))
 
     return np.vstack(X_list)
-
 
 def snapshots_from_X(
     X,
@@ -119,7 +121,6 @@ def snapshots_from_X(
         snaps.append(x[t == ti][:, :-1])
 
     return snaps, times
-
 
 def load_data(
     path,
@@ -175,10 +176,12 @@ def load_data(
         Subsampled expression snapshots.
     unique_times : ndarray of shape (n_times,)
         Unique times present in the dataset.
-    ind_array : ndarray of shape (n_times, nsamples)
-        Encoded cell-type labels for sampled cells.
-    cell_types : pandas.Series
-        Full cell-type annotation column.
+    ind_array : ndarray of shape (n_times, nsamples), optional
+        Encoded cell-type labels for sampled cells. Returned only when
+        ``cell_type_key`` is not ``None``.
+    cell_types : pandas.Series, optional
+        Full cell-type annotation column. Returned only when
+        ``cell_type_key`` is not ``None``.
     """
     n_genes = len(genes)
     import scanpy as sc
@@ -236,7 +239,6 @@ def load_data(
         plt.tight_layout()
         plt.show()
 
-
     keep_mask = (total_counts > min_tot_counts) & (total_counts < max_tot_counts)
     n_removed = int((~keep_mask).sum())
     print(
@@ -283,7 +285,6 @@ def load_data(
     
     return samples, unique_times, ind_array, adata.obs[cell_type_key]
 
-
 def deep_dict_update(base, updates):
     """Recursively update a dictionary with nested-dictionary support.
 
@@ -307,8 +308,6 @@ def deep_dict_update(base, updates):
             out[key] = value
     return out
 
-
-
 def evaluate_signed_network_auprc(Delta, M, symmetric=False):
     """Compute edge/positive/negative AUPRC for signed network recovery.
 
@@ -325,9 +324,9 @@ def evaluate_signed_network_auprc(Delta, M, symmetric=False):
     Returns
     -------
     out : dict
-        Dictionary with:
-        - ``AP_edge``, ``AP_pos``, ``AP_neg``, ``AP_signed``
-        - PR-curve arrays under ``PR_edge``, ``PR_pos``, ``PR_neg``
+        Dictionary containing scalar average-precision metrics and precision-
+        recall curve data under the keys ``PR_edge``, ``PR_pos``, and
+        ``PR_neg``.
     """
     from sklearn.metrics import average_precision_score, precision_recall_curve
 
@@ -357,6 +356,20 @@ def evaluate_signed_network_auprc(Delta, M, symmetric=False):
     s_neg = -d
 
     def _pr(y_true, score):
+        """Compute average precision and precision-recall curve.
+
+        Parameters
+        ----------
+        y_true : ndarray
+            Binary labels.
+        score : ndarray
+            Real-valued scores used for ranking.
+
+        Returns
+        -------
+        tuple
+            Average precision, precision array, recall array, and thresholds.
+        """
         if np.sum(y_true) == 0:
             return np.nan, np.array([1.0]), np.array([0.0]), np.array([])
         ap = float(average_precision_score(y_true, score))
@@ -378,7 +391,6 @@ def evaluate_signed_network_auprc(Delta, M, symmetric=False):
         "PR_neg": {"precision": p_neg, "recall": r_neg, "thresholds": t_neg},
     }
 
-
 def get_hsc_network(genes):
     """Build the HSC regulatory sign matrix aligned with a gene list.
 
@@ -392,8 +404,8 @@ def get_hsc_network(genes):
     M : ndarray of shape (n_genes, n_genes)
         Regulatory sign matrix with entries in ``{-1, 0, 1}`` where
         ``M[i, j]`` encodes the sign of the effect of gene ``i`` on gene ``j``.
-    network_genes : list of str, optional
-        Returned only when ``return_network_genes=True``.
+    network_genes : list of str
+        Gene names used by the built-in HSC network definition.
     """
     genes = list(genes)
     network_genes = [
@@ -413,6 +425,18 @@ def get_hsc_network(genes):
     M = np.zeros((len(genes), len(genes)), dtype=float)
 
     def set_edge(src, tgt, sign):
+        """Set one signed edge in the HSC network matrix.
+
+        Parameters
+        ----------
+        src : str
+            Source gene name.
+        tgt : str
+            Target gene name.
+        sign : int or float
+            Edge sign stored in the matrix.
+
+        """
         if src in idx and tgt in idx:
             M[idx[src], idx[tgt]] = float(sign)
 
@@ -460,7 +484,6 @@ def get_hsc_network(genes):
 
     return M, network_genes
 
-
 def assign_OT(x, y, method="exact", reg=0.1, sym=False, return_indices=False):
     """Compute an OT pairing from ``x`` to ``y``.
 
@@ -489,6 +512,12 @@ def assign_OT(x, y, method="exact", reg=0.1, sym=False, return_indices=False):
         Source samples in pairing order.
     yk : ndarray of shape (n_x, d)
         Target samples paired to ``xk``.
+    i_idx : ndarray, optional
+        Source indices of the assignment pairs. Returned only when
+        ``return_indices=True``.
+    j_idx : ndarray, optional
+        Target indices of the assignment pairs. Returned only when
+        ``return_indices=True``.
     """
     import ot
 
@@ -510,7 +539,6 @@ def assign_OT(x, y, method="exact", reg=0.1, sym=False, return_indices=False):
     if return_indices:
         return x[i_idx], y[j_idx], i_idx, j_idx
     return x[i_idx], y[j_idx]
-
 
 def map_celltypes_knn(source_x, target_x, target_labels, n_neighbors=15):
     """Transfer cell-type labels from target cells to source cells with kNN.
@@ -549,7 +577,6 @@ def map_celltypes_knn(source_x, target_x, target_labels, n_neighbors=15):
     knn.fit(target_x_scaled, target_labels)
     return knn.predict(source_x_scaled)
 
-
 def compute_correlations(x, y):
     """Compute paired summary metrics between two arrays.
 
@@ -566,7 +593,7 @@ def compute_correlations(x, y):
         Dictionary with ``pearson``, ``spearman``, ``energy_distance`` and
         ``rmse_l2`` entries. The energy distance is computed with
         ``geomloss.SamplesLoss('energy')`` on the full sample arrays.
-        For rmse the reference profile is y
+        For ``rmse_l2``, the reference profile is ``y``.
     """
     import geomloss
     from scipy.stats import pearsonr, spearmanr

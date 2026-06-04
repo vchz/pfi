@@ -2,7 +2,7 @@
 
 import torch
 
-from .._models import AutonomousModelMixin, GenericModelMixin, Model
+from ..base import AutonomousModelMixin, GenericModelMixin, Model
 from ..utils.nns import ConstantNN
 
 __all__ = [
@@ -10,9 +10,26 @@ __all__ = [
     "DSMScore",
 ]
 
-
 class OUScore(AutonomousModelMixin, Model):
-    """Analytical score model for Ornstein-Uhlenbeck dynamics."""
+    """Analytical score model for Ornstein-Uhlenbeck dynamics.
+
+    Parameters
+    ----------
+    m0 : torch.Tensor, shape (Ndim,)
+        Initial mean.
+    S0 : torch.Tensor, shape (Ndim, Ndim)
+        Initial covariance.
+    D : torch.Tensor, shape (Ndim, Ndim)
+        Diffusion matrix.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model`` after overriding ``net_cls``.
+
+    Attributes
+    ----------
+    Ndim_ : int
+        Spatial dimension inferred from ``m0`` at construction time.
+
+    """
 
     def __init__(
         self,
@@ -21,20 +38,6 @@ class OUScore(AutonomousModelMixin, Model):
         D,
         **kwargs,
     ):
-        """Initialize OU analytical score model.
-
-        Parameters
-        ----------
-        m0 : torch.Tensor, shape (Ndim,)
-            Initial mean.
-        S0 : torch.Tensor, shape (Ndim, Ndim)
-            Initial covariance.
-        D : torch.Tensor, shape (Ndim, Ndim)
-            Diffusion matrix.
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model` after overriding
-            ``net_cls`` with :class:`pfi.utils.nns.ConstantNN`.
-        """
         kwargs.pop("sizes", None)
         kwargs.pop("net_cls", None)
         kwargs.pop("feature_norm", None)
@@ -42,8 +45,8 @@ class OUScore(AutonomousModelMixin, Model):
         super(OUScore, self).__init__(
             sizes=[],
             net_cls=ConstantNN,
-            feature_norm=False,
-            batch_norm=False,
+            feature_norm=None,
+            batch_norm=None,
             **kwargs,
         )
         self.Ndim_ = int(m0.shape[0])
@@ -52,7 +55,13 @@ class OUScore(AutonomousModelMixin, Model):
         self.register_buffer("D", D)
 
     def dim_output(self):
-        """Return output dimension of the constant matrix network."""
+        """Return output dimension of the constant matrix network.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain):
@@ -93,29 +102,34 @@ class OUScore(AutonomousModelMixin, Model):
         score = -torch.einsum("nij,nj->ni", Sigma_inv_full, delta)
         return score
 
-
 class DSMScore(GenericModelMixin, Model):
-    """Noise-conditional score model with inference-time sigma fallback."""
+    """Noise-conditional score model with inference-time sigma fallback.
+
+    Parameters
+    ----------
+    noise_lvl : float, default=0.0
+        Default sigma used at inference when sigma is not provided.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
         noise_lvl=0.0,
         **kwargs,
     ):
-        """Initialize DSM score wrapper.
-
-        Parameters
-        ----------
-        noise_lvl : float, default=0.0
-            Default sigma used at inference when sigma is not provided.
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model`.
-        """
         super(DSMScore, self).__init__(**kwargs)
         self.noise_lvl = float(noise_lvl)
 
     def dim_output(self):
-        """Return spatial score output dimension."""
+        """Return spatial score output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_ - 1
 
     def _apply_feature_norm(self, x):

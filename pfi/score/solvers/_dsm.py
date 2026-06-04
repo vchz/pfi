@@ -7,7 +7,6 @@ from tqdm import tqdm
 
 from ...utils.nns import FastTensorDataLoader, loss_grad_std
 
-
 def geometric_sequence(
     L,
 ):
@@ -28,7 +27,6 @@ def geometric_sequence(
     for i in range(0, L):
         sigma[i] = 1 * r ** i
     return sigma
-
 
 def generate_noisy_training_data_batch(
     Dist,
@@ -84,7 +82,6 @@ def generate_noisy_training_data_batch(
     x_std = x_train.std(dim=(0, 1, 2))
 
     return x_train, x_data, x_mean, x_std, sigma
-
 
 def DSM_(
     dist,
@@ -157,7 +154,6 @@ def DSM_(
     
     net.init_model(x_train)
 
-
     loader = FastTensorDataLoader(
         torch.permute(x_train, (2, 0, 1, 3)),
         torch.permute(x_data, (1, 0, 2)),
@@ -229,14 +225,13 @@ def DSM_(
     min_noise = sigma[-1]
     return net, loss_hist, min_noise
 
-
 def generate_data_DSM(
-    maxiter,
     infNet,
     init_,
     time_,
-    L,
-    noise_lvl=0,
+    maxiter=100,
+    L=5,
+    
 ):
     """Sample from a trained DSM model using annealed Langevin dynamics.
 
@@ -250,12 +245,10 @@ def generate_data_DSM(
         Initial states including noise-level and time columns.
     time_ : torch.Tensor of shape (nsamples,)
         Time values assigned to generated samples.
-    L : int
+    maxiter : int, default=100
+        Number of Langevin steps per noise level.
+    L : int, default=5
         Number of noise levels.
-    noise_lvl : float, default=0
-        Noise level at which to stop the annealing schedule.
-        Effective stopping level is ``max(min(sigma), noise_lvl)`` where
-        ``sigma`` is the geometric noise sequence.
 
     Returns
     -------
@@ -270,6 +263,8 @@ def generate_data_DSM(
 
     sigma = torch.as_tensor(geometric_sequence(L), dtype=sol.dtype, device=sol.device)
     min_sigma = torch.min(sigma)
+    noise_lvl = float(getattr(infNet, "noise_lvl", 0.0))
+    
     target_noise = torch.maximum(min_sigma, torch.as_tensor(noise_lvl, dtype=sol.dtype, device=sol.device))
     stop_k = int(torch.argmin(torch.abs(sigma - target_noise)).item())
 

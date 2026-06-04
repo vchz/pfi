@@ -8,7 +8,6 @@ from ...couplings import pairwise_OT
 from ...interpolants import ChebyshevInterpolant, LinearInterpolant, select_best_lambda
 from .._pfm import compute_conditional_distributions
 
-
 def compute_conditional_distributions_unbalanced(
     interp,
     growth_interp,
@@ -80,7 +79,6 @@ def compute_conditional_distributions_unbalanced(
     wtrain = torch.exp(log_psi)
     gtrain = dlog_psi_t.reshape(batch_size * n_eval)
     return xtrain, ytrain, wtrain, gtrain
-
 
 def UFM_OT_(
     dist,
@@ -273,7 +271,6 @@ def UFM_OT_(
 
     return drift_net, growth_model, [drift_loss_hist, growth_loss_hist]
 
-
 def UFM_UOT_(
     dist,
     times,
@@ -458,7 +455,6 @@ def UFM_UOT_(
                 )
 
     return drift_net, growth_net, [flow_loss_hist, growth_loss_hist]
-
 
 __all__ = [
     "UFM_UOT_",

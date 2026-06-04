@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
-
 class LayerNoWN(nn.Module):
     """Linear layer with Xavier initialization and no weight normalization.
 
@@ -56,7 +55,6 @@ class LayerNoWN(nn.Module):
         """
         return self.linear(x)
 
-
 class DNN(nn.Module):
     """Fully-connected network.
 
@@ -68,6 +66,7 @@ class DNN(nn.Module):
         Random seed for layer initialization.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
+
     """
 
     def __init__(
@@ -104,7 +103,6 @@ class DNN(nn.Module):
         """
         return self.net(x)
 
-
 class SpectralNormDNN(nn.Module):
     """Fully-connected network with spectral normalization on hidden layers.
 
@@ -120,6 +118,9 @@ class SpectralNormDNN(nn.Module):
         The last dimensions are assumed to be 'time-like'.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
+    full : bool, default=False
+        If ``True``, also apply spectral normalization to the final layer.
+
     """
     def __init__(
         self,
@@ -129,7 +130,6 @@ class SpectralNormDNN(nn.Module):
         activation=nn.ELU(),
         full=False,
     ):
-        
         super(SpectralNormDNN, self).__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -188,6 +188,7 @@ class LinearNN(nn.Module):
         Kept for API compatibility.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Kept for API compatibility.
+
     """
 
     def __init__(self, sizes, seed=0, activation=nn.ELU()):
@@ -198,9 +199,19 @@ class LinearNN(nn.Module):
         self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
 
     def forward(self, x):
-        """Apply the linear map to inputs ``x``."""
-        return torch.einsum("mr,nr->nm", self.B, x)
+        """Apply the linear map to inputs ``x``.
 
+        Parameters
+        ----------
+        x : torch.Tensor of shape (n_samples, in_dim)
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor of shape (n_samples, out_dim)
+            Linear output.
+        """
+        return torch.einsum("mr,nr->nm", self.B, x)
 
 class ConstantNN(nn.Module):
     """Constant matrix module parameterized by ``B``.
@@ -214,6 +225,7 @@ class ConstantNN(nn.Module):
         Kept for API compatibility.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Kept for API compatibility.
+
     """
 
     def __init__(self, sizes, seed=0, activation=nn.ELU()):
@@ -224,7 +236,18 @@ class ConstantNN(nn.Module):
         self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
 
     def forward(self, x):
-        """Return the learned constant matrix ``B``."""
+        """Return the learned constant matrix ``B``.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Unused input, kept for API compatibility.
+
+        Returns
+        -------
+        torch.Tensor of shape (out_dim, in_dim)
+            Constant matrix parameter.
+        """
         _ = x
         return self.B
 
@@ -308,7 +331,6 @@ class FastTensorDataLoader:
         """
         return self.n_batches
 
-
 def loss_grad_std(
     loss,
     net,
@@ -347,7 +369,6 @@ def loss_grad_std(
     sizt = torch.tensor(siz, dtype=torch.float32, device=device)
     return torch.sqrt(torch.sum(vart) / (torch.sum(sizt) - len(sizt)))
 
-
 def divergence(
     field,
     x,
@@ -384,9 +405,19 @@ def divergence(
         div[:, i] = gradient[:, i]
     return div
 
-
 def symsqrt(matrix):
-    """Compute the square root of a positive definite matrix or scalar."""
+    """Compute the symmetric square root of a positive matrix.
+
+    Parameters
+    ----------
+    matrix : torch.Tensor
+        Positive-definite matrix of shape ``(..., n, n)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Symmetric square root of ``matrix`` with the same batch shape.
+    """
     # perform the decomposition
     # s, v = matrix.symeig(eigenvectors=True)
     _, s, v = matrix.svd()  # passes torch.autograd.gradcheck()

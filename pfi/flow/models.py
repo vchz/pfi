@@ -2,7 +2,7 @@
 
 import torch
 
-from .._models import (
+from ..base import (
     AutonomousModelMixin,
     GenericModelMixin,
     GradientModelMixin,
@@ -25,9 +25,21 @@ __all__ = [
     "MultiplicativeFlow",
 ]
 
-
 class CLEFlow(AutonomousModelMixin, Model):
-    """Chemical-Langevin-inspired autonomous flow model."""
+    """Chemical-Langevin-inspired autonomous flow model.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    vol : float, default=1.0
+        Volume scale used in the CLE correction term.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -36,26 +48,19 @@ class CLEFlow(AutonomousModelMixin, Model):
         lx=1.0,
         **kwargs,
     ):
-        """Initialize CLE flow model.
-
-        Parameters
-        ----------
-        score : callable
-            Score model called on ``Xtrain``.
-        vol : float, default=1.0
-            Volume scale used in the CLE correction term.
-        lx : float, default=1.0
-            Linear degradation coefficient.
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model`.
-        """
         super(CLEFlow, self).__init__(**kwargs)
         self.score = score
         self.vol = vol
         self.lx = lx
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -93,9 +98,26 @@ class CLEFlow(AutonomousModelMixin, Model):
 
         return drift_part - (0.5 / self.vol) * (div_d + DD * score)
 
-
 class CLELambdaFlow(AutonomousModelMixin, Model):
-    """CLE flow model with trainable degradation vector."""
+    """CLE flow model with trainable degradation vector.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    vol : float, default=1.0
+        Volume scale used in the CLE correction term.
+    lx : float, default=1.0
+        Initial value used to initialize ``lambda_``.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    Attributes
+    ----------
+    lambda_ : torch.nn.Parameter or None
+        Trainable degradation parameter created during ``init_model``.
+
+    """
 
     def __init__(
         self,
@@ -104,19 +126,6 @@ class CLELambdaFlow(AutonomousModelMixin, Model):
         lx=1.0,
         **kwargs,
     ):
-        """Initialize CLE flow model with trainable degradation.
-
-        Parameters
-        ----------
-        score : callable
-            Score model called on ``Xtrain``.
-        vol : float, default=1.0
-            Volume scale used in the CLE correction term.
-        lx : float, default=1.0
-            Initial value used to initialize ``lambda_``.
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model`.
-        """
         super(CLELambdaFlow, self).__init__(**kwargs)
         self.score = score
         self.vol = vol
@@ -141,7 +150,13 @@ class CLELambdaFlow(AutonomousModelMixin, Model):
         return self
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -180,28 +195,45 @@ class CLELambdaFlow(AutonomousModelMixin, Model):
 
         return drift_part - (0.5 / self.vol) * (div_d + DD * score)
 
-
 class PositiveCLEFlow(PositiveModelMixin, CLEFlow):
-    """Positive-output CLE flow (ReLU applied to network output)."""
+    """Positive-output CLE flow.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    vol : float, default=1.0
+        Volume scale used in the CLE correction term.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     pass
 
-
 class AutonomousGrowth(AutonomousModelMixin, Model):
-    """Autonomous growth model wrapping a scalar neural network output."""
+    """Autonomous growth model wrapping a scalar neural network output.
+
+    Parameters
+    ----------
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(self, **kwargs):
-        """Initialize autonomous growth model.
-
-        Parameters
-        ----------
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model`.
-        """
         super(AutonomousGrowth, self).__init__(**kwargs)
 
     def dim_output(self):
-        """Return scalar growth output dimension."""
+        """Return scalar growth output dimension.
+
+        Returns
+        -------
+        int
+            Scalar output dimension equal to ``1``.
+        """
         return 1
 
     def forward(self, Xtrain):
@@ -219,9 +251,21 @@ class AutonomousGrowth(AutonomousModelMixin, Model):
         """
         return self.evaluate_net(Xtrain)
 
-
 class OUFlow(AutonomousModelMixin, Model):
-    """Ornstein-Uhlenbeck flow model with linear drift matrix."""
+    """Ornstein-Uhlenbeck flow model with linear drift matrix.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    D : float or torch.Tensor, default=0.5
+        Diffusion matrix or scalar diffusion scale.
+    lx : float, default=0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model`` after overriding ``net_cls``.
+
+    """
 
     def __init__(
         self,
@@ -230,20 +274,6 @@ class OUFlow(AutonomousModelMixin, Model):
         lx=0,
         **kwargs,
     ):
-        """Initialize OU flow model.
-
-        Parameters
-        ----------
-        score : callable
-            Score model called on ``Xtrain``.
-        D : float or torch.Tensor, default=0.5
-            Diffusion matrix/scalar.
-        lx : float, default=0
-            Linear degradation coefficient.
-        **kwargs : dict
-            Forwarded to :class:`pfi._models.Model` after overriding
-            ``net_cls`` with :class:`pfi.utils.nns.LinearNN`.
-        """
         kwargs.pop("sizes", None)
         kwargs.pop("net_cls", None)
         kwargs.pop("feature_norm", None)
@@ -251,8 +281,8 @@ class OUFlow(AutonomousModelMixin, Model):
         super(OUFlow, self).__init__(
             sizes=[],
             net_cls=LinearNN,
-            feature_norm=False,
-            batch_norm=False,
+            feature_norm=None,
+            batch_norm=None,
             **kwargs,
         )
         self.lx = lx
@@ -260,7 +290,13 @@ class OUFlow(AutonomousModelMixin, Model):
         self.register_buffer("D", torch.as_tensor(D))
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -297,9 +333,19 @@ class OUFlow(AutonomousModelMixin, Model):
 
         return drift - torch.einsum("mr,nr->nm", D, score)
 
-
 class AutonomousODEFlow(AutonomousModelMixin, Model):
-    """Autonomous deterministic flow with linear degradation."""
+    """Autonomous deterministic flow with linear degradation.
+
+    Parameters
+    ----------
+    score : callable
+        Score model kept for API consistency.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -307,13 +353,18 @@ class AutonomousODEFlow(AutonomousModelMixin, Model):
         lx=1.0,
         **kwargs,
     ):
-        """Initialize autonomous ODE flow model."""
         super(AutonomousODEFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -343,9 +394,21 @@ class AutonomousODEFlow(AutonomousModelMixin, Model):
 
         return drift - self.lx * xt
 
-
 class AdditiveGradientFlow(GradientModelMixin, AutonomousModelMixin, Model):
-    """Autonomous additive-noise flow with gradient drift."""
+    """Autonomous additive-noise flow with gradient drift.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    D : float or torch.Tensor, default=0.5
+        Additive diffusion matrix or scalar.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -354,14 +417,19 @@ class AdditiveGradientFlow(GradientModelMixin, AutonomousModelMixin, Model):
         D=0.5,
         **kwargs,
     ):
-        """Initialize additive gradient flow model."""
         super(AdditiveGradientFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
 
     def dim_output(self):
-        """Return scalar potential output dimension."""
+        """Return scalar potential output dimension.
+
+        Returns
+        -------
+        int
+            Scalar potential output dimension equal to ``1``.
+        """
         return 1
 
     def forward(self, Xtrain, stoch=False):
@@ -400,9 +468,21 @@ class AdditiveGradientFlow(GradientModelMixin, AutonomousModelMixin, Model):
 
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", D, score)
 
-
 class NonAutonomousAdditiveGradientFlow(GradientModelMixin, GenericModelMixin, Model):
-    """Non-autonomous additive-noise flow with gradient drift."""
+    """Non-autonomous additive-noise flow with gradient drift.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    D : float or torch.Tensor, default=0.5
+        Additive diffusion matrix or scalar.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -411,14 +491,19 @@ class NonAutonomousAdditiveGradientFlow(GradientModelMixin, GenericModelMixin, M
         D=0.5,
         **kwargs,
     ):
-        """Initialize non-autonomous additive gradient flow model."""
         super(NonAutonomousAdditiveGradientFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
 
     def dim_output(self):
-        """Return scalar potential output dimension."""
+        """Return scalar potential output dimension.
+
+        Returns
+        -------
+        int
+            Scalar potential output dimension equal to ``1``.
+        """
         return 1
 
     def forward(self, Xtrain, stoch=False):
@@ -457,9 +542,19 @@ class NonAutonomousAdditiveGradientFlow(GradientModelMixin, GenericModelMixin, M
 
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", D, score)
 
-
 class ODEFlow(GenericModelMixin, Model):
-    """Deterministic non-autonomous flow with linear degradation."""
+    """Deterministic non-autonomous flow with linear degradation.
+
+    Parameters
+    ----------
+    score : callable
+        Score model kept for API consistency.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -467,13 +562,18 @@ class ODEFlow(GenericModelMixin, Model):
         lx=1.0,
         **kwargs,
     ):
-        """Initialize non-autonomous ODE flow model."""
         super(ODEFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -503,9 +603,21 @@ class ODEFlow(GenericModelMixin, Model):
 
         return drift - self.lx * xt
 
-
 class AdditiveFlow(AutonomousModelMixin, Model):
-    """Autonomous additive-noise flow with score correction."""
+    """Autonomous additive-noise flow with score correction.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    D : float or torch.Tensor, default=0.5
+        Additive diffusion matrix or scalar.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -514,14 +626,19 @@ class AdditiveFlow(AutonomousModelMixin, Model):
         D=0.5,
         **kwargs,
     ):
-        """Initialize additive flow model."""
         super(AdditiveFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
         self.register_buffer("D", torch.as_tensor(D))
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):
@@ -557,9 +674,19 @@ class AdditiveFlow(AutonomousModelMixin, Model):
 
         return (drift - self.lx * xt) - torch.einsum("mr,nr->nm", D, score)
 
-
 class MultiplicativeFlow(AutonomousModelMixin, Model):
-    """Multiplicative-noise flow model with score correction."""
+    """Multiplicative-noise flow model with score correction.
+
+    Parameters
+    ----------
+    score : callable
+        Score model called on ``Xtrain``.
+    lx : float, default=1.0
+        Linear degradation coefficient.
+    **kwargs : dict
+        Forwarded to ``pfi.base.Model``.
+
+    """
 
     def __init__(
         self,
@@ -567,13 +694,18 @@ class MultiplicativeFlow(AutonomousModelMixin, Model):
         lx=1.0,
         **kwargs,
     ):
-        """Initialize multiplicative flow model."""
         super(MultiplicativeFlow, self).__init__(**kwargs)
         self.score = score
         self.lx = lx
 
     def dim_output(self):
-        """Return network output dimension."""
+        """Return network output dimension.
+
+        Returns
+        -------
+        int
+            Spatial output dimension.
+        """
         return self.Ndim_
 
     def forward(self, Xtrain, stoch=False):

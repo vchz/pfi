@@ -6,8 +6,7 @@ import torch
 from .solvers import DSM_, generate_data_DSM
 from ..utils.data import snapshots_from_X
 
-
-class ScoreModel:
+class ScoreEstimator:
     """Estimate score functions from snapshot data.
 
     Parameters
@@ -33,8 +32,11 @@ class ScoreModel:
         Fitted score model used at inference time, set during `fit`.
         The input of this fitted model is ``(x, sigma, t)``,
         dimension ``ndim + 2``.
+    loss_ : ndarray of shape (n_epochs,)
+        Recorded training loss history.
     min_noise_ : float
         Minimum noise level used by the fitted DSM model.
+
     """
 
     def __init__(
@@ -44,19 +46,6 @@ class ScoreModel:
         solver_kwargs=None,
         device="cpu",
     ):
-        """Initialize the score estimator wrapper.
-
-        Parameters
-        ----------
-        model : torch.nn.Module
-            Score network.
-        solver : {'dsm'}, default='dsm'
-            Score solver.
-        solver_kwargs : dict or None, default=None
-            Solver configuration.
-        device : str or torch.device, default='cpu'
-            Device used for fit and inference.
-        """
         self.model = model
         self.solver = solver
         self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
@@ -74,13 +63,14 @@ class ScoreModel:
         X : ndarray of shape (n_samples, ndim + 1)
             Input data where the last column contains time.
         y : None, default=None
-            Ignored. Present for estimator API compatibility.
+            Ignored. Present for future compatibility with sklearn.
 
         Returns
         -------
-        self : ScoreModel
+        self : ScoreEstimator
             Fitted estimator.
         """
+        _ = y
         dist, times = snapshots_from_X(X)
         dist = [d.to(device=self.device, dtype=torch.float32) for d in dist]
         times = times.to(device=self.device, dtype=torch.float32)
@@ -115,6 +105,7 @@ class ScoreModel:
         ----------
         X : array-like of shape (n_samples, ndim + 1)
             Inputs containing state and time columns.
+
         Returns
         -------
         score : ndarray of shape (n_samples, ndim)
@@ -129,8 +120,7 @@ class ScoreModel:
     def sample(
         self,
         X,
-        nsamples=None,
-        maxiter=100,
+        **kwargs,
     ):
         """Generate samples using the fitted score model.
 
@@ -138,10 +128,9 @@ class ScoreModel:
         ----------
         X : ndarray of shape of shape (n_samples, ndim + 1)
             Conditioning samples with time in the last column.
-        nsamples : int, default=None
-            Number of generated samples. If ``None``, uses ``X.shape[0]``.
-        maxiter : int, default=100
-            Number of Langevin updates per noise level.
+        **kwargs : dict
+            Extra keyword arguments forwarded to the sampler.
+
         Returns
         -------
         gen : ndarray of shape (nsamples, ndim + 1)
@@ -150,9 +139,7 @@ class ScoreModel:
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
 
         if self.solver == "dsm":
-            if nsamples is None:
-                nsamples = X.shape[0]
-
+            nsamples = X.shape[0]
             init_ = torch.zeros(
                 (nsamples, self.Ndim_ + 2),
                 dtype=torch.float32,
@@ -164,15 +151,12 @@ class ScoreModel:
                 device=self.device,
             )
             time_ = X[:, -1]
-            target_noise = float(getattr(self.model_, "noise_lvl", 0.0))
             with torch.no_grad():
                 gen = generate_data_DSM(
-                    maxiter=maxiter,
                     infNet=self.model_,
                     init_=init_,
                     time_=time_,
-                    L=self.solver_kwargs["L"],
-                    noise_lvl=target_noise,
+                    **kwargs,
                 )
             gen_xt = torch.cat(
                 [gen[:, : self.Ndim_], gen[:, self.Ndim_ + 1 : self.Ndim_ + 2]],
@@ -186,7 +170,7 @@ class ScoreModel:
         self,
         X,
         y=None,
-        maxiter=100,
+        **kwargs,
     ):
         """Compute per-time energy distance between generated and observed data.
 
@@ -195,14 +179,16 @@ class ScoreModel:
         X : ndarray of shape (n_samples, ndim + 1)
             Input data with time in the last column.
         y : None, default=None
-            Ignored. Present for estimator API compatibility.
-        maxiter : int, default=100
-            Number of Langevin updates used during sampling.
+            Ignored. Present for future compatibility with sklearn.
+        **kwargs : dict
+            Extra keyword arguments forwarded to the sampler.
+
         Returns
         -------
         scores : ndarray of shape (n_times,)
             Energy distance at each unique time in ``X``.
         """
+        _ = y
         import geomloss
 
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
@@ -215,8 +201,7 @@ class ScoreModel:
                 x_t = X[X[:, -1] == t]
                 gen = self.sample(
                     x_t,
-                    nsamples=x_t.shape[0],
-                    maxiter=maxiter,
+                    **kwargs,
                 )
                 y_t = x_t[:, : self.Ndim_].contiguous()
                 ed = loss(

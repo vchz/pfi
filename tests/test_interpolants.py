@@ -9,8 +9,8 @@ from pfi.utils.data import X_from_snapshots
 from pfi.utils.nns import ConstantNN, LinearNN
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
-
 def test_chebyshev_interpolant_OU():
+    """Check Chebyshev interpolation against OU flow derivatives."""
     dt = 0.01
     Dt = 0.2
     nsnaps = 5

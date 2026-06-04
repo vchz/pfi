@@ -3,7 +3,6 @@
 import torch
 import ot
 
-
 def _compute_pairwise_OT_plan(
     x,
     y,
@@ -13,7 +12,36 @@ def _compute_pairwise_OT_plan(
     reg_m=None,
     method="sinkhorn",
 ):
-    """Compute a pairwise OT/UOT plan between two snapshots."""
+    """Compute a pairwise OT or UOT plan between two snapshots.
+
+    Parameters
+    ----------
+    x : torch.Tensor of shape (n_x, ndim)
+        Source snapshot.
+    y : torch.Tensor of shape (n_y, ndim)
+        Target snapshot.
+    mass_x : float or torch.Tensor
+        Total mass assigned to ``x``.
+    mass_y : float or torch.Tensor
+        Total mass assigned to ``y``.
+    reg : float, default=0.1
+        Entropic regularization strength.
+    reg_m : float or None, default=None
+        Unbalanced transport mass regularization. If ``None``, solve the
+        balanced problem.
+    method : str, default='sinkhorn'
+        POT backend name.
+
+    Returns
+    -------
+    torch.Tensor of shape (n_x, n_y)
+        Transport plan normalized to sum to one.
+
+    Raises
+    ------
+    ValueError
+        If the computed plan has near-zero total mass.
+    """
     nx = x.shape[0]
     ny = y.shape[0]
     c = ot.dist(x, y, metric="sqeuclidean")
@@ -51,9 +79,21 @@ def _compute_pairwise_OT_plan(
         raise ValueError("OT plan has near-zero mass; adjust solver/regularization settings.")
     return plan / plan.sum()
 
-
 def _sample_trajectory(plan_list, num_samples):
-    """Sample index trajectories from chained pairwise plans."""
+    """Sample index trajectories from chained pairwise plans.
+
+    Parameters
+    ----------
+    plan_list : list of torch.Tensor
+        Consecutive transport plans.
+    num_samples : int
+        Number of stitched trajectories to sample.
+
+    Returns
+    -------
+    list of torch.Tensor
+        Sequence of index tensors, one per snapshot.
+    """
     device = plan_list[0].device
     n0 = plan_list[0].shape[0]
     traj = [torch.randint(0, n0, (num_samples,), device=device)]
@@ -64,7 +104,6 @@ def _sample_trajectory(plan_list, num_samples):
         next_idx = torch.multinomial(probs, num_samples=1).squeeze(1)
         traj.append(next_idx)
     return traj
-
 
 def pairwise_OT(
     dist,
@@ -154,7 +193,6 @@ def pairwise_OT(
     batch_ot_samples = torch.cat(batch_paths, dim=1)
     psi_traj = torch.cat(batch_psi, dim=1)
     return batch_ot_samples, psi_traj
-
 
 __all__ = [
     "pairwise_OT",

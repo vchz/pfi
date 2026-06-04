@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from pfi.flow import FlowModel
+from pfi.flow import FlowEstimator
 from pfi.flow.interpolants import ChebyshevInterpolant
 from pfi.flow.models import OUFlow
 from pfi.score.models import OUScore
@@ -10,6 +10,7 @@ from pfi.utils.nns import ConstantNN
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
 def test_flow_OU():
+    """Recover the OU drift matrix with the flow estimator."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dt = 0.01
@@ -57,7 +58,7 @@ def test_flow_OU():
 
     flow_model = OUFlow(score=true_score, D=D_)
 
-    flow_reg = FlowModel(
+    flow_reg = FlowEstimator(
         flow=flow_model,
         growth=None,
         solver="pfm",

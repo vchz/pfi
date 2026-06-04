@@ -8,7 +8,6 @@ import torch
 
 from ....utils.data import deep_dict_update
 
-
 def to_deepruot_csv(X, csv_path):
     """Export time-augmented samples to DeepRUOTv2 CSV format.
 
@@ -35,12 +34,23 @@ def to_deepruot_csv(X, csv_path):
     df.to_csv(csv_path, index=False)
     return df
 
-
 class _DeepRUOTv2Flow(torch.nn.Module):
-    """Private DeepRUOTv2 force wrapper."""
+    """Private DeepRUOTv2 force wrapper.
+
+    Parameters
+    ----------
+    v_net : torch.nn.Module
+        DeepRUOTv2 drift network.
+    score_model : object
+        DeepRUOTv2 score model exposing ``compute_gradient``.
+    ndim : int
+        Spatial dimension.
+    sigma : float, default=1.0
+        Diffusion noise scale used for stochastic sampling.
+
+    """
 
     def __init__(self, v_net, score_model, ndim, sigma=1.0):
-        """Initialize the DeepRUOTv2 force wrapper."""
         super().__init__()
         self.v_net = v_net
         self.score_model = score_model
@@ -48,7 +58,21 @@ class _DeepRUOTv2Flow(torch.nn.Module):
         self.Ndim = ndim
 
     def forward(self, Xtrain, stoch=False):
-        """Compute DeepRUOTv2 force."""
+        """Compute DeepRUOTv2 force.
+
+        Parameters
+        ----------
+        Xtrain : torch.Tensor of shape (batch_size, ndim + 1)
+            Input states with time in the last column.
+        stoch : bool, default=False
+            If ``True``, also return Gaussian noise with scale ``sigma``.
+
+        Returns
+        -------
+        torch.Tensor or tuple
+            Deterministic force when ``stoch=False``; otherwise
+            ``(force, noise)``.
+        """
         t = Xtrain[:, -1:]
         x = Xtrain[:, : self.Ndim]
         drift = self.v_net(t, x)
@@ -65,7 +89,6 @@ class _DeepRUOTv2Flow(torch.nn.Module):
         if stoch:
             return force, self.sigma * torch.randn_like(x)
         return force
-
 
 def DeepRUOTv2_(dist, times, flow_model, growth_model=None, **solver_kwargs):
     """Fit DeepRUOTv2 from snapshot tensors.

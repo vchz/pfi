@@ -8,7 +8,6 @@ from .solvers import PFM_, UPFI_
 from .solvers.future import UFM_UOT_, UFM_OT_
 from .solvers.external import DeepRUOTv2_
 
-
 SOLVER_FUNCS = {
     "pfm": PFM_,
     "upfi": UPFI_,
@@ -17,29 +16,41 @@ SOLVER_FUNCS = {
     "future.ufm_ot": UFM_OT_,
 }
 
-
-class FlowModel:
+class FlowEstimator:
     """Flow estimator trained with one of the configured solver backends.
 
-    Supported solvers are configured in ``SOLVER_FUNCS``.
+    Supported solver names are given by ``SOLVER_FUNCS``.
+
+    Parameters
+    ----------
+    flow : torch.nn.Module or None, default=None
+        Drift model.
+    growth : torch.nn.Module or None, default=None
+        Optional growth model used by unbalanced solvers.
+    solver : str, default='pfm'
+        Solver backend name.
+    solver_kwargs : dict or None, default=None
+        Extra keyword arguments forwarded to the selected solver.
+    device : str or torch.device, default='cpu'
+        Device used for fitting and inference.
+
+    Attributes
+    ----------
+    Ndim_ : int
+        Inferred spatial dimension set during ``fit``.
+    flow_ : torch.nn.Module
+        Fitted drift model returned by the selected solver.
+    growth_ : torch.nn.Module or None
+        Fitted growth model returned by the selected solver.
+    loss_ : ndarray of shape (n_epochs,)
+        Recorded training loss history.
+    times_ : ndarray of shape (n_times,)
+        Sorted unique training times.
+
     """
 
     def __init__(self, flow=None, growth=None, solver="pfm", solver_kwargs=None, device="cpu"):
-        """Initialize a flow estimator.
 
-        Parameters
-        ----------
-        flow : torch.nn.Module, optional
-            Drift model. Ignored if the solver is an external solver.
-        growth : torch.nn.Module, optional
-            Growth model used by unbalanced solvers. Ignored if the solver is an external solver.
-        solver : str, default="pfm"
-            Solver name. Must be a key of ``SOLVER_FUNCS``.
-        solver_kwargs : dict, optional
-            Extra solver parameters forwarded to the selected solver.
-        device : str, default="cpu"
-            Torch device used for fitting and inference.
-        """
         self.solver = solver
         self.solver_kwargs = {} if solver_kwargs is None else solver_kwargs
         self.device = device
@@ -55,11 +66,11 @@ class FlowModel:
         X : array-like of shape (n_samples, ndim + 1)
             Training data with time in the last column.
         y : None, optional
-            Unused, kept for estimator API compatibility.
+            Ignored. Present for future compatibility with sklearn.
 
         Returns
         -------
-        self : FlowModel
+        self : FlowEstimator
             Fitted estimator.
         """
         _ = y
@@ -167,7 +178,7 @@ class FlowModel:
         dt : float, default=0.01
             Integration step for sampling.
         pos : bool, default=True
-            Passed to :meth:`sample` to enforce nonnegative states in
+            Passed to ``sample`` to enforce nonnegative states in
             stochastic mode.
 
         Returns
