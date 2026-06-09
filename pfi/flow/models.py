@@ -30,8 +30,9 @@ class CLEFlow(AutonomousModelMixin, Model):
 
     Parameters
     ----------
-    score : callable
-        Score model called on ``Xtrain``.
+    score : callable or None, default=None
+        Score model called on ``Xtrain``. If ``None``, a default
+        ``DSMScore`` is created during ``init_model``.
     vol : float, default=1.0
         Volume scale used in the CLE correction term.
     lx : float, default=1.0
@@ -43,7 +44,7 @@ class CLEFlow(AutonomousModelMixin, Model):
 
     def __init__(
         self,
-        score,
+        score=None,
         vol=1.0,
         lx=1.0,
         **kwargs,
@@ -132,20 +133,22 @@ class CLELambdaFlow(AutonomousModelMixin, Model):
         self.lx = lx
         self.lambda_ = None
 
-    def init_model(self, X):
+    def init_model(self, X, generator=None):
         """Initialize network, scales, and trainable ``lambda_``.
 
         Parameters
         ----------
         X : torch.Tensor
             Batched input tensor used to initialize the parent model.
+        generator : torch.Generator or None, default=None
+            Optional RNG for reproducible weight initialization.
 
         Returns
         -------
         CLELambdaFlow
             The initialized model instance.
         """
-        super(CLELambdaFlow, self).init_model(X)
+        super(CLELambdaFlow, self).init_model(X, generator=generator)
         self.lambda_ = torch.nn.Parameter(self.lx * torch.ones(1, device=X.device, dtype=X.dtype))
         return self
 
@@ -267,27 +270,19 @@ class OUFlow(AutonomousModelMixin, Model):
 
     """
 
-    def __init__(
-        self,
-        score,
-        D=0.5,
-        lx=0,
-        **kwargs,
-    ):
-        kwargs.pop("sizes", None)
-        kwargs.pop("net_cls", None)
-        kwargs.pop("feature_norm", None)
-        kwargs.pop("batch_norm", None)
-        super(OUFlow, self).__init__(
-            sizes=[],
-            net_cls=LinearNN,
-            feature_norm=None,
-            batch_norm=None,
-            **kwargs,
-        )
+    def __init__(self, score, D=0.5, lx=0):
+        super(OUFlow, self).__init__()
         self.lx = lx
         self.score = score
         self.register_buffer("D", torch.as_tensor(D))
+
+    def init_model(self, X, generator=None):
+        self.Ndim_ = int(X.shape[-1] - 1)
+        if self.net_ is None:
+            self.net_ = LinearNN([self.Ndim_, self.Ndim_]).to(
+                device=X.device, dtype=X.dtype
+            )
+        return self
 
     def dim_output(self):
         """Return network output dimension.
@@ -349,7 +344,7 @@ class AutonomousODEFlow(AutonomousModelMixin, Model):
 
     def __init__(
         self,
-        score,
+        score=None,
         lx=1.0,
         **kwargs,
     ):

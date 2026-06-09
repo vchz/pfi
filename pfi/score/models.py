@@ -31,28 +31,19 @@ class OUScore(AutonomousModelMixin, Model):
 
     """
 
-    def __init__(
-        self,
-        m0,
-        S0,
-        D,
-        **kwargs,
-    ):
-        kwargs.pop("sizes", None)
-        kwargs.pop("net_cls", None)
-        kwargs.pop("feature_norm", None)
-        kwargs.pop("batch_norm", None)
-        super(OUScore, self).__init__(
-            sizes=[],
-            net_cls=ConstantNN,
-            feature_norm=None,
-            batch_norm=None,
-            **kwargs,
-        )
-        self.Ndim_ = int(m0.shape[0])
+    def __init__(self, m0, S0, D):
+        super(OUScore, self).__init__()
         self.register_buffer("S0", S0)
         self.register_buffer("m0", m0)
         self.register_buffer("D", D)
+
+    def init_model(self, X, generator=None):
+        self.Ndim_ = int(X.shape[-1] - 1)
+        if self.net_ is None:
+            self.net_ = ConstantNN([self.Ndim_, self.Ndim_]).to(
+                device=X.device, dtype=X.dtype
+            )
+        return self
 
     def dim_output(self):
         """Return output dimension of the constant matrix network.

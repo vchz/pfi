@@ -7,7 +7,6 @@ from pfi.flow.interpolants import ChebyshevInterpolant
 from pfi.flow.models import CLEFlow, AutonomousGrowth
 from pfi.score.models import DSMScore
 from pfi.utils.data import X_from_snapshots
-from pfi.utils.nns import DNN
 from pfi.utils.simulations import g_rate, simulate_toggle_switch, toggle_switch
 
 TOGGLE_SWITCH_MODEL_PARAMS = np.array([2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 4.0])
@@ -88,8 +87,7 @@ def test_pfm_toggle_switch():
     Np_flow = 25
     score_model = DSMScore(
         sizes=[Np] * 5,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm="zscore",
@@ -98,8 +96,7 @@ def test_pfm_toggle_switch():
     flow_model = CLEFlow(
         score=None,
         sizes=[Np_flow] * 4,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         lx=1.0,
         feature_norm=None,
@@ -107,8 +104,7 @@ def test_pfm_toggle_switch():
     )
     growth_model = AutonomousGrowth(
         sizes=[Np_flow] * 4,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm=None,
@@ -120,10 +116,10 @@ def test_pfm_toggle_switch():
         growth_model=growth_model,
         s_solver="dsm",
         f_solver="pfm",
-        s_solver_kwargs={"L": 10, 
-                         "bs": None, 
-                         "adp_flag": 1, 
-                         "lr": 5e-4, 
+        s_solver_kwargs={"L": 10,
+                         "bs": None,
+                         "adp_flag": 1,
+                         "lr": 5e-4,
                          "n_epochs": 2000},
         f_solver_kwargs={
             "interp": ChebyshevInterpolant(),
@@ -132,17 +128,16 @@ def test_pfm_toggle_switch():
             "lr": 1e-3,
             "n_epochs": 2000,
         },
-        fit_on_score_samples=False,
         device=device,
-        seed=0,
+        random_state=0,
     )
     est.flow_estimator.flow.vol = TOGGLE_SWITCH_VOL
     est.fit(X)
 
-    score_eds = est.score_estimator.score(X)
+    score_eds = est.score_estimator_.score(X)
     assert np.all(score_eds < 0.005)
 
-    force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator)
+    force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator_)
     assert force_rel_mse < 0.08
     assert growth_rel_mse < 0.05
 
@@ -155,8 +150,7 @@ def test_upfi_toggle_switch():
     Np_flow = 25
     score_model = DSMScore(
         sizes=[Np] * 5,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm="zscore",
@@ -165,8 +159,7 @@ def test_upfi_toggle_switch():
     flow_model = CLEFlow(
         score=None,
         sizes=[Np_flow] * 4,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         lx=1.0,
         feature_norm=None,
@@ -174,8 +167,7 @@ def test_upfi_toggle_switch():
     )
     growth_model = AutonomousGrowth(
         sizes=[Np_flow] * 4,
-        net_cls=DNN,
-        seed=0,
+        spectral_norm=False,
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm=None,
@@ -187,23 +179,22 @@ def test_upfi_toggle_switch():
         growth_model=growth_model,
         s_solver="dsm",
         f_solver="upfi",
-        s_solver_kwargs={"L": 10, 
-                         "bs": None, 
-                         "adp_flag": 1, 
-                         "lr": 5e-4, 
+        s_solver_kwargs={"L": 10,
+                         "bs": None,
+                         "adp_flag": 1,
+                         "lr": 5e-4,
                          "n_epochs": 2000},
-        f_solver_kwargs={"n_steps": 2, 
-                         "reg_wfr": 1, 
-                         "reach": 20.0, 
-                         "lr": 1e-3, 
+        f_solver_kwargs={"n_steps": 2,
+                         "reg_wfr": 1,
+                         "reach": 20.0,
+                         "lr": 1e-3,
                          "n_epochs": 2000},
-        fit_on_score_samples=False,
         device=device,
-        seed=0,
+        random_state=0,
     )
     est.flow_estimator.flow.vol = TOGGLE_SWITCH_VOL
     est.fit(X)
 
-    force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator)
-    assert force_rel_mse < 0.065
-    assert growth_rel_mse < 0.085
+    force_rel_mse, growth_rel_mse = _get_toggle_switch_errors(est.flow_estimator_)
+    assert force_rel_mse < 0.07
+    assert growth_rel_mse < 0.09

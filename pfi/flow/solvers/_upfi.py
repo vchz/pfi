@@ -6,6 +6,7 @@ from tqdm import tqdm
 def sample_minibatch(
     dist,
     bs,
+    generator=None,
 ):
     """Sample an independent mini-batch at each snapshot.
 
@@ -27,7 +28,7 @@ def sample_minibatch(
 
     batch = torch.zeros((nsnaps, bs, dist[0].shape[1]), dtype=dtype, device=device)
     for k in range(nsnaps):
-        idx = torch.randint(0, dist[k].shape[0], (bs,), device=dist[k].device)
+        idx = torch.randint(0, dist[k].shape[0], (bs,), device=dist[k].device, generator=generator)
         batch[k] = dist[k].index_select(0, idx)
     return batch
 
@@ -110,6 +111,7 @@ def UPFI_(
     reach=10.0,
     scheduler_kwargs=None,
     verbose=True,
+    generator=None,
 ):
     """Fit flow and growth jointly with teacher-forced ODE matching.
 
@@ -159,7 +161,7 @@ def UPFI_(
 
     nsamples = min(s.shape[0] for s in dist)
     dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
+        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
         dim=0,
     )
     t_tensor = (
@@ -169,9 +171,9 @@ def UPFI_(
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
     
     if hasattr(net, 'init_model'):
-        net.init_model(scale_data)
+        net.init_model(scale_data, generator=generator)
     if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data)
+        growth_model.init_model(scale_data, generator=generator)
 
     if bs is None:
         bs = nsamples
@@ -204,7 +206,7 @@ def UPFI_(
     for _ in pbar:
         optimizer.zero_grad()
 
-        x_batch_t = sample_minibatch(dist, bs=bs)
+        x_batch_t = sample_minibatch(dist, bs=bs, generator=generator)
         x_batch = [x_batch_t[k] for k in range(nsnaps)]
 
         x_hat = []

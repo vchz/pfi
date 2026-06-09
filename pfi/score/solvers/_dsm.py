@@ -35,6 +35,7 @@ def generate_noisy_training_data_batch(
     L,
     nsamples,
     nsnaps,
+    generator=None,
 ):
     """Generate noisy DSM training inputs and normalization statistics.
 
@@ -69,7 +70,7 @@ def generate_noisy_training_data_batch(
     dtype = Dist.dtype
     sigma = torch.as_tensor(geometric_sequence(L), dtype=dtype, device=device)
 
-    noise = torch.randn((nsnaps, L, nsamples, ndim), dtype=dtype, device=device)
+    noise = torch.randn((nsnaps, L, nsamples, ndim), dtype=dtype, device=device, generator=generator)
     x_noisy = Dist[:, None, :, :] + sigma[None, :, None, None] * noise
 
     x_train = torch.zeros((nsnaps, L, nsamples, ndim + 2), dtype=dtype, device=device)
@@ -94,6 +95,7 @@ def DSM_(
     lr=5e-4,
     scheduler_kwargs=None,
     verbose=True,
+    generator=None,
 ):
     """Train a score network with denoising score matching.
 
@@ -135,7 +137,7 @@ def DSM_(
     """
     device = dist[0].device
     nsamples = min(s.shape[0] for s in dist)
-    dist = torch.stack([s[torch.randperm(s.shape[0], device=device)[:nsamples]] for s in dist], dim=0)
+    dist = torch.stack([s[torch.randperm(s.shape[0], device=device, generator=generator)[:nsamples]] for s in dist], dim=0)
     dtype = dist.dtype
 
     nsnaps, nsamples, ndim = dist.shape
@@ -150,15 +152,17 @@ def DSM_(
         L,
         nsamples,
         nsnaps,
+        generator=generator,
     )
     
-    net.init_model(x_train)
+    net.init_model(x_train, generator=generator)
 
     loader = FastTensorDataLoader(
         torch.permute(x_train, (2, 0, 1, 3)),
         torch.permute(x_data, (1, 0, 2)),
         batch_size=bs,
         shuffle=True,
+        generator=generator,
     )
 
     optimizer = torch.optim.Adam(list(net.parameters()), lr=lr)
@@ -231,7 +235,7 @@ def generate_data_DSM(
     time_,
     maxiter=100,
     L=5,
-    
+    generator=None,
 ):
     """Sample from a trained DSM model using annealed Langevin dynamics.
 
@@ -273,7 +277,7 @@ def generate_data_DSM(
         sol[:, ndim] = sigma[k]
 
         for _ in range(0, maxiter):
-            z = torch.randn((nsamples, ndim), dtype=sol.dtype, device=sol.device)
+            z = torch.randn((nsamples, ndim), dtype=sol.dtype, device=sol.device, generator=generator)
             guru = infNet(sol)
             sol[:, 0:ndim] = sol[:, 0:ndim] + 0.5 * alpha * guru + torch.sqrt(alpha) * z
 

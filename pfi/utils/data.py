@@ -9,11 +9,38 @@ from urllib.request import urlretrieve
 import numpy as np
 import torch
 
+
 DATA_URLS = {
     "natcomm": "https://zenodo.org/records/19237708/files/10XChromiumV3_10.1038_s41467-021-27159-x_10.5281_zenodo.5291737.h5ad.gz",
     "kaggle": "https://zenodo.org/records/19237708/files/CITE-seq_10.1126_science.adi8577_GSE305370.h5ad.gz",
 }
 PFI_DATA_FOLDER = "~/pfi_data"
+
+
+def check_random_state_torch(random_state, device="cpu"):
+    """Return a seeded ``torch.Generator`` from an int or ``None``.
+
+    Parameters
+    ----------
+    random_state : int or None
+        Seed value. If ``None``, a random seed is drawn from the default
+        global generator.
+    device : str or torch.device, default="cpu"
+        Device on which the generator will live.
+
+    Returns
+    -------
+    torch.Generator
+        A generator seeded deterministically when ``random_state`` is an
+        ``int``, or seeded randomly when it is ``None``.
+    """
+    generator = torch.Generator(device=device)
+    if random_state is None:
+        generator.seed()
+    else:
+        generator.manual_seed(int(random_state))
+    return generator
+
 
 def fetch(url):
     """Fetch a ``.h5ad`` or ``.h5ad.gz`` file into ``PFI_DATA_FOLDER``.

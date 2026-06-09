@@ -79,7 +79,7 @@ def _compute_pairwise_OT_plan(
         raise ValueError("OT plan has near-zero mass; adjust solver/regularization settings.")
     return plan / plan.sum()
 
-def _sample_trajectory(plan_list, num_samples):
+def _sample_trajectory(plan_list, num_samples, generator=None):
     """Sample index trajectories from chained pairwise plans.
 
     Parameters
@@ -96,7 +96,7 @@ def _sample_trajectory(plan_list, num_samples):
     """
     device = plan_list[0].device
     n0 = plan_list[0].shape[0]
-    traj = [torch.randint(0, n0, (num_samples,), device=device)]
+    traj = [torch.randint(0, n0, (num_samples,), device=device, generator=generator)]
 
     for k in range(len(plan_list)):
         probs = plan_list[k][traj[k]]
@@ -111,6 +111,7 @@ def pairwise_OT(
     reg=0.1,
     reg_m=None,
     method="sinkhorn",
+    generator=None,
 ):
     """Build stitched trajectories from consecutive pairwise OT plans.
 
@@ -153,7 +154,7 @@ def pairwise_OT(
     for _ in range(nb):
         chunks = []
         for k in range(nsnaps):
-            idx = torch.randperm(dist[k].shape[0], device=dist[k].device)[:bs]
+            idx = torch.randperm(dist[k].shape[0], device=dist[k].device, generator=generator)[:bs]
             chunks.append(dist[k].index_select(0, idx))
 
         plan_list = []
@@ -170,7 +171,7 @@ def pairwise_OT(
                 )
             )
 
-        traj = _sample_trajectory(plan_list, num_samples=ntraj)
+        traj = _sample_trajectory(plan_list, num_samples=ntraj, generator=generator)
         paths_k = torch.zeros((nsnaps, ntraj, dist[0].shape[1]), dtype=dtype, device=device)
         for k in range(nsnaps):
             paths_k[k] = chunks[k].index_select(0, traj[k])

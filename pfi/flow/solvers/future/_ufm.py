@@ -17,6 +17,7 @@ def compute_conditional_distributions_unbalanced(
     nodes_fit,
     nodes_eval,
     sigma=0.001,
+    generator=None,
 ):
     """Build weighted training pairs for unbalanced flow matching.
 
@@ -59,7 +60,7 @@ def compute_conditional_distributions_unbalanced(
     xtrain = torch.zeros((batch_size * n_eval, ndim + 1), dtype=dtype, device=device)
     ytrain = torch.zeros((batch_size * n_eval, ndim), dtype=dtype, device=device)
 
-    xind = torch.randint(0, nsamples, (batch_size,), device=device)
+    xind = torch.randint(0, nsamples, (batch_size,), device=device, generator=generator)
     dist_batch = torch.permute(dist[:, xind, :], (1, 0, 2))
 
     interp.fit(nodes_fit, dist_batch)
@@ -72,7 +73,7 @@ def compute_conditional_distributions_unbalanced(
 
     xtrain[:, ndim] = nodes_eval.reshape(batch_size * n_eval)
     mut = x_interp.reshape(batch_size * n_eval, ndim)
-    xtrain[:, :ndim] = mut + sigma * torch.randn_like(mut)
+    xtrain[:, :ndim] = mut + sigma * torch.randn(mut.shape, dtype=mut.dtype, device=mut.device, generator=generator)
     ytrain[:, :ndim] = dx_interp.reshape(batch_size * n_eval, ndim)
 
     log_psi = log_psi_t.reshape(batch_size * n_eval)
@@ -96,6 +97,7 @@ def UFM_OT_(
     ot="exact",
     reg=0.1,
     verbose=True,
+    generator=None,
 ):
     """Two-phase FM: optimize growth first, then drift with learned masses.
 
@@ -149,7 +151,7 @@ def UFM_OT_(
 
     nsamples = min(s.shape[0] for s in dist)
     dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
+        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
         dim=0,
     )
     device = dist_tensor.device
@@ -159,13 +161,13 @@ def UFM_OT_(
         .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
     )
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-    
-    if hasattr(net, 'init_model'):
-        net.init_model(scale_data)
-    if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data)
 
-    batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot)
+    if hasattr(net, 'init_model'):
+        net.init_model(scale_data, generator=generator)
+    if growth_model is not None and hasattr(growth_model, 'init_model'):
+        growth_model.init_model(scale_data, generator=generator)
+
+    batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot, generator=generator)
     nsnaps, nsamples, ndim = batch_ot_samples.shape
 
     mass_vec = torch.ones((nsnaps,), dtype=dist_tensor.dtype, device=device)
@@ -218,7 +220,7 @@ def UFM_OT_(
         pbar_g = tqdm(range(n_epochs), desc="ufm_ot-growth", dynamic_ncols=True, disable=not verbose)
         for _ in pbar_g:
             xtrain, _ = compute_conditional_distributions(
-                interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001
+                interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
             )
             optimizer_growth.zero_grad()
             growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
@@ -240,7 +242,7 @@ def UFM_OT_(
     pbar_d = tqdm(range(n_epochs), desc="ufm_ot-drift", dynamic_ncols=True, disable=not verbose)
     for _ in pbar_d:
         xtrain, ytrain = compute_conditional_distributions(
-            interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001
+            interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
         )
 
         if zero_growth:
@@ -288,6 +290,7 @@ def UFM_UOT_(
     reg_m=10.0,
     ot="sinkhorn",
     verbose=True,
+    generator=None,
 ):
     """Train split drift/growth objectives with unbalanced pairwise OT.
 
@@ -345,7 +348,7 @@ def UFM_UOT_(
 
     nsamples = min(s.shape[0] for s in dist)
     dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
+        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
         dim=0,
     )
     device = dist_tensor.device
@@ -357,11 +360,11 @@ def UFM_UOT_(
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
 
     if hasattr(net, 'init_model'):
-        net.init_model(scale_data)
+        net.init_model(scale_data, generator=generator)
     if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data)
+        growth_model.init_model(scale_data, generator=generator)
 
-    batch_ot_samples, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot)
+    batch_ot_samples, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot, generator=generator)
     _, nsamples, ndim = batch_ot_samples.shape
 
     uniform_kind = torch.linspace(
@@ -418,6 +421,7 @@ def UFM_UOT_(
             data_batch_nodes,
             uniform_batch_nodes,
             sigma=0.001,
+            generator=generator,
         )
 
         optimizer_drift.zero_grad()

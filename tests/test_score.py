@@ -4,7 +4,6 @@ import torch.nn as nn
 
 from pfi.score import ScoreEstimator
 from pfi.score.models import DSMScore
-from pfi.utils.nns import DNN
 from pfi.utils.data import X_from_snapshots
 from pfi.utils.simulations import simulate_ornstein_uhlenbeck
 
@@ -45,8 +44,7 @@ def test_dsm_OU():
     Np = 50
     score_model = DSMScore(
         sizes=[Np, Np, Np, Np, Np],
-        net_cls=DNN,
-        seed=7,
+        spectral_norm=False,
         activation=nn.ELU(),
         noise_lvl=0.0,
         batch_norm='zscore'

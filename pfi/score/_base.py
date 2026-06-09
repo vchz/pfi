@@ -3,10 +3,17 @@
 import numpy as np
 import torch
 
+from sklearn.base import BaseEstimator
+from sklearn.base import _fit_context as fit_context
+from sklearn.utils.validation import check_is_fitted
+from sklearn.utils._param_validation import HasMethods, StrOptions
+from sklearn_compat.utils.validation import validate_data
 from .solvers import DSM_, generate_data_DSM
-from ..utils.data import snapshots_from_X
+from ..utils.data import snapshots_from_X, check_random_state_torch
+from ..utils.nns import clone_module
+from .models import DSMScore
 
-class ScoreEstimator:
+class ScoreEstimator(BaseEstimator):
     """Estimate score functions from snapshot data.
 
     Parameters
@@ -39,18 +46,42 @@ class ScoreEstimator:
 
     """
 
+    _parameter_constraints = {
+        "model": [HasMethods(["to"]), None],
+        "solver": [StrOptions({"dsm"})],
+        "solver_kwargs": [dict, None],
+        "device": [object],
+        "random_state": [int, None],
+    }
+
     def __init__(
         self,
-        model,
+        model=None,
         solver="dsm",
         solver_kwargs=None,
         device="cpu",
+        random_state=0,
     ):
         self.model = model
         self.solver = solver
-        self.solver_kwargs = solver_kwargs if solver_kwargs is not None else {}
+        self.solver_kwargs = solver_kwargs
         self.device = device
+        self.random_state = random_state
 
+    def _more_tags(self):
+        return {"non_deterministic": True, "multioutput_only": True}
+    
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        tags.non_deterministic = True
+        tags.target_tags.multi_output = True
+        return tags
+
+    def __sklearn_is_fitted__(self):
+        """Return whether the estimator has been fitted."""
+        return hasattr(self, "model_")
+
+    @fit_context(prefer_skip_nested_validation=True)
     def fit(
         self,
         X,
@@ -71,20 +102,39 @@ class ScoreEstimator:
             Fitted estimator.
         """
         _ = y
+
+        generator = check_random_state_torch(self.random_state, device=self.device)
+
+        X = validate_data(self, X, reset=True, ensure_2d=True, dtype="numeric")
+        if X.shape[1] < 2:
+            raise ValueError(
+                f"X has 1 feature(s), but {type(self).__name__} requires at least 2 "
+                "(1 spatial + 1 time column)."
+            )
         dist, times = snapshots_from_X(X)
+        if len(dist) < 2:
+            raise ValueError(
+                "n_samples=1 is not enough. Requires at least 2 distinct time points."
+            )
         dist = [d.to(device=self.device, dtype=torch.float32) for d in dist]
         times = times.to(device=self.device, dtype=torch.float32)
 
         self.Ndim_ = X.shape[1] - 1
-        self.model = self.model.to(self.device)
+        if self.model is None:
+            model = DSMScore()
+        else:
+            model = clone_module(self.model)
+        model = model.to(self.device)
         self.times_ = np.unique(X[:, -1])
+        solver_kwargs = {} if self.solver_kwargs is None else dict(self.solver_kwargs)
 
         if self.solver == "dsm":
             self.model_, loss_hist, min_noise = DSM_(
                 dist,
                 times,
-                self.model,
-                **self.solver_kwargs,
+                model,
+                generator=generator,
+                **solver_kwargs,
             )
             self.loss_ = np.asarray(loss_hist)
             self.min_noise_ = min_noise
@@ -111,6 +161,8 @@ class ScoreEstimator:
         score : ndarray of shape (n_samples, ndim)
             Predicted score vectors.
         """
+        check_is_fitted(self, "model_")
+        X = validate_data(self, X, reset=False, ensure_2d=True, dtype="numeric")
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         with torch.no_grad():
             score = self.model_(X)
@@ -136,6 +188,8 @@ class ScoreEstimator:
         gen : ndarray of shape (nsamples, ndim + 1)
             Generated samples with time in the last column.
         """
+        check_is_fitted(self, ["model_", "Ndim_"])
+        X = validate_data(self, X, reset=False, ensure_2d=True, dtype="numeric")
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
 
         if self.solver == "dsm":
@@ -166,7 +220,7 @@ class ScoreEstimator:
 
         raise NotImplementedError("Other score matching solvers not implemented yet.")
 
-    def score(
+    def error(
         self,
         X,
         y=None,
@@ -191,6 +245,8 @@ class ScoreEstimator:
         _ = y
         import geomloss
 
+        check_is_fitted(self, ["model_", "Ndim_"])
+        X = validate_data(self, X, reset=False, ensure_2d=True, dtype="numeric")
         X = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         times = torch.unique(X[:, -1])
         scores = []
@@ -200,7 +256,7 @@ class ScoreEstimator:
             for t in times:
                 x_t = X[X[:, -1] == t]
                 gen = self.sample(
-                    x_t,
+                    x_t.cpu().numpy(),
                     **kwargs,
                 )
                 y_t = x_t[:, : self.Ndim_].contiguous()
@@ -211,3 +267,30 @@ class ScoreEstimator:
                 scores.append(ed)
 
         return np.asarray(scores)
+
+    def score(
+        self,
+        X,
+        y=None,
+        **kwargs,
+    ):
+        """Return the negated mean error for sklearn compatibility.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, ndim + 1)
+            Input data with time in the last column.
+        y : None, default=None
+            Ignored. Present for future compatibility with sklearn.
+        **kwargs : dict
+            Extra keyword arguments forwarded to ``error``.
+
+        Returns
+        -------
+        float
+            Negated mean error. Larger values indicate better fit.
+        """
+        errors = self.error(X, y=y, **kwargs)
+        if errors.size == 0:
+            return float("nan")
+        return -float(np.mean(errors))

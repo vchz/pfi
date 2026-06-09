@@ -16,6 +16,7 @@ def compute_conditional_distributions(
     nodes_eval,
     device="cpu",
     sigma=0.001,
+    generator=None,
 ):
     """Build conditional training pairs for drift regression.
 
@@ -51,7 +52,7 @@ def compute_conditional_distributions(
     xtrain = torch.zeros((batch_size * n_eval, ndim + 1), dtype=dtype, device=device)
     ytrain = torch.zeros((batch_size * n_eval, ndim), dtype=dtype, device=device)
 
-    xind = torch.randint(0, nsamples, (batch_size,), device=device)
+    xind = torch.randint(0, nsamples, (batch_size,), device=device, generator=generator)
     dist_batch = torch.permute(dist[:, xind, :], (1, 0, 2))
 
     interp.fit(nodes_fit, dist_batch)
@@ -59,7 +60,7 @@ def compute_conditional_distributions(
 
     xtrain[:, ndim] = nodes_eval.reshape(batch_size * n_eval)
     mut = x_interp.reshape(batch_size * n_eval, ndim)
-    xtrain[:, :ndim] = mut + sigma * torch.randn_like(mut)
+    xtrain[:, :ndim] = mut + sigma * torch.randn(mut.shape, dtype=mut.dtype, device=mut.device, generator=generator)
     ytrain[:, :ndim] = dx_interp.reshape(batch_size * n_eval, ndim)
     return xtrain, ytrain
 
@@ -80,6 +81,7 @@ def PFM_(
     ot="exact",
     reg=0.1,
     verbose=True,
+    generator=None,
 ):
     """Train drift and optional growth models with weighted flow matching.
 
@@ -135,7 +137,7 @@ def PFM_(
         interp = ChebyshevInterpolant()
     nsamples = min(s.shape[0] for s in dist)
     dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
+        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
         dim=0,
     )
     device = dist_tensor.device
@@ -147,12 +149,12 @@ def PFM_(
     scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
 
     if hasattr(net, 'init_model'):
-        net.init_model(scale_data)
+        net.init_model(scale_data, generator=generator)
     if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data)
+        growth_model.init_model(scale_data, generator=generator)
 
     if precomputed_traj is None:
-        batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot)
+        batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot, generator=generator)
     else:
         batch_ot_samples = precomputed_traj
     nsnaps, nsamples, ndim = batch_ot_samples.shape
@@ -208,7 +210,7 @@ def PFM_(
     for epoch in pbar:
         optimizer.zero_grad()
         xtrain, ytrain = compute_conditional_distributions(
-            interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001
+            interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
         )
 
         if zero_growth:
