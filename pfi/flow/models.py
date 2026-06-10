@@ -265,8 +265,6 @@ class OUFlow(AutonomousModelMixin, Model):
         Diffusion matrix or scalar diffusion scale.
     lx : float, default=0
         Linear degradation coefficient.
-    **kwargs : dict
-        Forwarded to ``pfi.base.Model`` after overriding ``net_cls``.
 
     """
 

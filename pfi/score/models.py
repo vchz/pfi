@@ -21,8 +21,6 @@ class OUScore(AutonomousModelMixin, Model):
         Initial covariance.
     D : torch.Tensor, shape (Ndim, Ndim)
         Diffusion matrix.
-    **kwargs : dict
-        Forwarded to ``pfi.base.Model`` after overriding ``net_cls``.
 
     Attributes
     ----------

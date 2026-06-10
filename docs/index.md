@@ -47,13 +47,11 @@ import torch
 from pfi import make_pfi_estimator
 from pfi.flow.models import CLEFlow
 from pfi.score.models import DSMScore
-from pfi.utils.nns import SpectralNormDNN
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 score_model = DSMScore(
     sizes=[128, 128, 128, 128],
-    net_cls=SpectralNormDNN,
     noise_lvl=0.01,
     batch_norm="zscore",
 )
@@ -61,7 +59,6 @@ score_model = DSMScore(
 flow_model = CLEFlow(
     score=None,
     sizes=[128, 128, 128],
-    net_cls=SpectralNormDNN,
     lx=1.5,
 )
 
@@ -73,7 +70,7 @@ est = make_pfi_estimator(
     s_solver_kwargs={"L": 5, "lr": 5e-4, "n_epochs": 4000},
     f_solver_kwargs={"fac": 2, "nb": 1, "lr": 1e-3, "n_epochs": 2000},
     device=device,
-    seed=0,
+    random_state=0,
 )
 est.fit(X)
 ```
@@ -82,37 +79,36 @@ This is the standard high-level usage pattern. For the complete signature, see [
 
 ### Quick note on the solvers
 
-The score stage is currently exposed through [`make_score_estimator`](api/make_score_estimator.md) and [`ScoreEstimator`](api/score/ScoreEstimator.md). The solver currently supported there is:
+The score stage is exposed through [`ScoreEstimator`](api/score/ScoreEstimator.md). The solver currently supported there is:
 
 - `dsm`: denoising score matching, taken from: <https://doi.org/10.1162/NECO_a_00142>, <https://doi.org/10.48550/arXiv.1907.05600>.
 
-The flow stage is exposed through [`make_flow_estimator`](api/make_flow_estimator.md) and [`FlowEstimator`](api/flow/FlowEstimator.md). The main solver names are:
+The flow stage is exposed through [`FlowEstimator`](api/flow/FlowEstimator.md). The main solver names are:
 
 - `pfm`: the flow-matching solver, please cite: <https://doi.org/10.48550/arXiv.2604.25062>.
 - `upfi`: the neural-ODE-style UPFI solver, please cite: <https://doi.org/10.48550/arXiv.2505.13197>, <https://doi.org/10.1073/pnas.2420621122>.
 
 ## Low level usage
 
-If you want finer control, work with the two stages separately.
+If you want finer control, work with the two stages separately using [`ScoreEstimator`](api/score/ScoreEstimator.md) and [`FlowEstimator`](api/flow/FlowEstimator.md) directly.
 
-The score stage is built with [`make_score_estimator`](api/make_score_estimator.md), which returns a [`ScoreEstimator`](api/score/ScoreEstimator.md). By default it uses [`DSMScore`](api/score/models/DSMScore.md), but you can provide your own instantiated score model.
-
-The flow stage is built with [`make_flow_estimator`](api/make_flow_estimator.md), which returns a [`FlowEstimator`](api/flow/FlowEstimator.md). You can pass an instantiated flow model and an optional growth model.
+By default `ScoreEstimator` uses [`DSMScore`](api/score/models/DSMScore.md), but you can provide your own instantiated score model. `FlowEstimator` accepts an instantiated flow model and an optional growth model.
 
 ```python
-from pfi import make_score_estimator, make_flow_estimator
+from pfi.score import ScoreEstimator
+from pfi.flow import FlowEstimator
 from pfi.flow.models import CLEFlow, AutonomousGrowth
 
-score_est = make_score_estimator(
+score_est = ScoreEstimator(
     solver="dsm",
     solver_kwargs={"L": 5, "lr": 5e-4, "n_epochs": 4000},
     device=device,
 )
 score_est.fit(X)
 
-flow_est = make_flow_estimator(
-    flow_model=CLEFlow(score=score_est.model_, lx=0.3),
-    growth_model=AutonomousGrowth(),
+flow_est = FlowEstimator(
+    flow=CLEFlow(score=score_est.model_, lx=0.3),
+    growth=AutonomousGrowth(),
     solver="pfm",
     solver_kwargs={"fac": 2, "nb": 1, "lr": 1e-3, "n_epochs": 2000},
     device=device,

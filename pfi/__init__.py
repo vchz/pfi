@@ -7,7 +7,6 @@ and utility helpers.
 import importlib as _importlib
 from ._pfi import (
     PFI,
-    hyperopt_pfi,
     make_pfi_estimator,
 )
 from . import base
@@ -23,7 +22,6 @@ _submodules = [
 
 __all__ = _submodules + [
     'PFI',
-    'hyperopt_pfi',
     'make_pfi_estimator',
 ]
 

@@ -68,7 +68,7 @@ def add_spectral_norm(layer, generator=None):
         with torch.no_grad():
             for name in ("weight_u", "weight_v"):
                 buf = getattr(wrapped, name)
-                v = torch.randn(buf.shape, generator=generator, dtype=buf.dtype, device=buf.device)
+                v = torch.randn(buf.shape, generator=generator, dtype=buf.dtype, device=generator.device)
                 buf.copy_(v / (v.norm() + 1e-12))
     return wrapped
 

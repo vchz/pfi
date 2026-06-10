@@ -76,9 +76,11 @@ class FlowEstimator(BaseEstimator):
         self.growth = growth
 
     def _more_tags(self):
+        """Return legacy sklearn tags for this estimator."""
         return {"non_deterministic": True, "multioutput_only": True}
 
     def __sklearn_tags__(self):
+        """Set sklearn ≥ 1.6 tags (non-deterministic, multi-output)."""
         tags = super().__sklearn_tags__()
         tags.non_deterministic = True
         tags.target_tags.multi_output = True
