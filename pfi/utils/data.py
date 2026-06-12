@@ -10,6 +10,26 @@ import numpy as np
 import torch
 
 
+def geometric_sequence(L):
+    """Return a geometrically decaying noise schedule of length ``L``.
+
+    Parameters
+    ----------
+    L : int
+        Number of noise levels.
+
+    Returns
+    -------
+    sigma : ndarray of shape (L,)
+        Geometrically decaying standard deviations from ~1 down to ~0.01.
+    """
+    r = np.exp((-2 / L) * np.log(10))
+    sigma = np.zeros(L)
+    for i in range(L):
+        sigma[i] = r ** i
+    return sigma
+
+
 DATA_URLS = {
     "natcomm": "https://zenodo.org/records/19237708/files/10XChromiumV3_10.1038_s41467-021-27159-x_10.5281_zenodo.5291737.h5ad.gz",
     "kaggle": "https://zenodo.org/records/19237708/files/CITE-seq_10.1126_science.adi8577_GSE305370.h5ad.gz",

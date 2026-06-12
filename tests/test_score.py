@@ -58,7 +58,7 @@ def test_dsm_OU():
             'lr': 1e-2, 
             'n_epochs': 5000, 
             'bs': None, 
-            'adp_flag': 1, 
+            'adaptive_weights': 1,
             'verbose': False,
         },
         device=device,

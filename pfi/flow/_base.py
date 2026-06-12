@@ -134,6 +134,13 @@ class FlowEstimator(BaseEstimator):
         else:
             flow = clone_module(self.flow).to(self.device)
         growth = clone_module(self.growth).to(self.device) if self.growth is not None else None
+
+        X_tensor = torch.tensor(X, dtype=torch.float32, device=self.device)
+        if hasattr(flow, "init_model"):
+            flow.init_model(X_tensor, generator=generator)
+        if growth is not None and hasattr(growth, "init_model"):
+            growth.init_model(X_tensor, generator=generator)
+
         solver_kwargs = {} if self.solver_kwargs is None else dict(self.solver_kwargs)
 
         self.flow_, self.growth_, loss_hist = solver_func(
@@ -222,15 +229,15 @@ class FlowEstimator(BaseEstimator):
 
         return x.detach().cpu().numpy()
 
-    def error(self, X, y, stoch=False, dt=0.01, pos=True):
-        """Compute per-time energy distance after pushing to next target times.
+    def error(self, X, y=None, stoch=False, dt=0.01, pos=True):
+        """Compute per-time energy distance over consecutive snapshot pairs.
 
         Parameters
         ----------
-        X : array-like of shape (n_samples_x, ndim + 1)
-            Source samples grouped by time in the last column.
-        y : array-like of shape (n_samples_y, ndim + 1)
-            Target samples grouped by time in the last column.
+        X : array-like of shape (n_samples, ndim + 1)
+            Samples from all time points with time in the last column.
+        y : ignored
+            Present for sklearn API compatibility.
         stoch : bool, default=False
             Whether to simulate with stochastic dynamics.
         dt : float, default=0.01
@@ -241,52 +248,41 @@ class FlowEstimator(BaseEstimator):
 
         Returns
         -------
-        scores : ndarray of shape (n_time_pairs,)
-            Energy distance for each source time in ``X`` that has a strictly
-            later time in ``y``.
+        scores : ndarray of shape (n_times - 1,)
+            Energy distance for each consecutive pair ``(t_k, t_{k+1})``.
         """
         import geomloss
 
         check_is_fitted(self, ["flow_", "Ndim_"])
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype="numeric")
-        y = np.asarray(y)
-        if y.ndim != 2:
-            raise ValueError("Expected 2D target data.")
-        if y.shape[1] != self.n_features_in_:
-            raise ValueError(
-                f"y has {y.shape[1]} features, but {type(self).__name__} "
-                f"is expecting {self.n_features_in_} features."
-            )
-        x_times = np.sort(np.unique(X[:, -1]))
-        y_times = np.sort(np.unique(y[:, -1]))
-        scores = []
 
+        _, times = snapshots_from_X(X)
+        times = times.numpy()
+
+        scores = []
         loss = geomloss.SamplesLoss("energy")
-        for tx in x_times:
-            y_later = y_times[y_times > tx]
-            if y_later.size == 0:
-                continue
-            ty = y_later[0]
-            x_t = X[np.isclose(X[:, -1], tx)]
-            y_t = y[np.isclose(y[:, -1], ty)][:, : self.Ndim_]
-            pred = self.sample(x_t, Dt=(ty - tx), stoch=stoch, dt=dt, pos=pos)
+        for k in range(len(times) - 1):
+            tx, ty = float(times[k]), float(times[k + 1])
+            x_src = X[np.isclose(X[:, -1], tx)]
+            y_tgt = X[np.isclose(X[:, -1], ty)][:, : self.Ndim_]
+            pred = self.sample(x_src, Dt=(ty - tx), stoch=stoch, dt=dt, pos=pos)
             ed = loss(
                 torch.as_tensor(pred, dtype=torch.float32, device=self.device),
-                torch.as_tensor(y_t, dtype=torch.float32, device=self.device),
+                torch.as_tensor(y_tgt, dtype=torch.float32, device=self.device),
             ).item()
             scores.append(ed)
 
         return np.asarray(scores)
 
-    def score(self, X, y, stoch=False, dt=0.01, pos=True):
+    def score(self, X, y=None, stoch=False, dt=0.01, pos=True):
         """Return the negated mean error for sklearn compatibility.
 
         Parameters
         ----------
-        X : array-like of shape (n_samples_x, ndim + 1)
-            Source samples grouped by time in the last column.
-        y : array-like of shape (n_samples_y, ndim + 1)
-            Target samples grouped by time in the last column.
+        X : array-like of shape (n_samples, ndim + 1)
+            Samples from all time points with time in the last column.
+        y : ignored
+            Present for sklearn API compatibility.
         stoch : bool, default=False
             Whether to simulate with stochastic dynamics.
         dt : float, default=0.01
@@ -298,9 +294,9 @@ class FlowEstimator(BaseEstimator):
         Returns
         -------
         float
-            Negated mean error. Larger values indicate better fit.
+            Negated mean error over consecutive snapshot pairs. Larger values indicate better fit.
         """
-        errors = self.error(X, y, stoch=stoch, dt=dt, pos=pos)
+        errors = self.error(X, stoch=stoch, dt=dt, pos=pos)
         if errors.size == 0:
             return float("nan")
         return -float(np.mean(errors))

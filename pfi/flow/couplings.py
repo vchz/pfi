@@ -132,10 +132,10 @@ def pairwise_OT(
 
     Returns
     -------
-    batch_ot_samples : torch.Tensor of shape (nsnaps, ntraj_total, ndim)
-        Sampled and stitched trajectories.
-    psi_traj : torch.Tensor of shape (nsnaps, ntraj_total)
-        Per-snapshot trajectory weights.
+    ot_trajs : torch.Tensor of shape (ntraj_total, nsnaps, ndim)
+        Sampled and stitched trajectories in trajectory-first layout.
+    psi_traj : torch.Tensor of shape (ntraj_total, nsnaps)
+        Per-trajectory mass weights.
     """
     nsnaps = len(dist)
     device = dist[0].device
@@ -191,9 +191,10 @@ def pairwise_OT(
         batch_paths.append(paths_k)
         batch_psi.append(psi_k)
 
-    batch_ot_samples = torch.cat(batch_paths, dim=1)
-    psi_traj = torch.cat(batch_psi, dim=1)
-    return batch_ot_samples, psi_traj
+    # Return trajectory-first layout (ntraj, nsnaps, ndim) to match interpolant API
+    ot_trajs = torch.cat(batch_paths, dim=1).permute(1, 0, 2)
+    psi_traj = torch.cat(batch_psi, dim=1).permute(1, 0)
+    return ot_trajs, psi_traj
 
 __all__ = [
     "pairwise_OT",

@@ -12,7 +12,7 @@ def compute_conditional_distributions_unbalanced(
     interp,
     growth_interp,
     psi_traj,
-    dist,
+    trajs,
     batch_size,
     nodes_fit,
     nodes_eval,
@@ -27,10 +27,10 @@ def compute_conditional_distributions_unbalanced(
         Interpolant for state trajectories.
     growth_interp : object
         Interpolant for ``log(psi_t)`` trajectories.
-    psi_traj : torch.Tensor of shape (n_snaps, n_samples)
-        Per-trajectory endpoint weights.
-    dist : torch.Tensor of shape (n_snaps, n_samples, ndim)
-        Sampled trajectories at snapshot nodes.
+    psi_traj : torch.Tensor of shape (ntraj, n_snaps)
+        Per-trajectory endpoint weights in trajectory-first layout.
+    trajs : torch.Tensor of shape (ntraj, n_snaps, ndim)
+        OT-stitched trajectories in trajectory-first layout.
     batch_size : int
         Number of sampled trajectories per optimization step.
     nodes_fit : torch.Tensor of shape (batch_size, n_snaps)
@@ -51,22 +51,23 @@ def compute_conditional_distributions_unbalanced(
     gtrain : torch.Tensor of shape (batch_size * n_eval,)
         Interpolated growth targets ``d/dt log(psi_t)``.
     """
-    nsamples = dist.shape[1]
+    ntraj = trajs.shape[0]
     n_eval = nodes_eval.shape[1]
-    ndim = dist.shape[2]
-    device = dist.device
-    dtype = dist.dtype
+    ndim = trajs.shape[2]
+    device = trajs.device
+    dtype = trajs.dtype
 
     xtrain = torch.zeros((batch_size * n_eval, ndim + 1), dtype=dtype, device=device)
     ytrain = torch.zeros((batch_size * n_eval, ndim), dtype=dtype, device=device)
 
-    xind = torch.randint(0, nsamples, (batch_size,), device=device, generator=generator)
-    dist_batch = torch.permute(dist[:, xind, :], (1, 0, 2))
+    traj_idx = torch.randint(0, ntraj, (batch_size,), device=device, generator=generator)
+    traj_batch = trajs[traj_idx]  # (batch_size, n_snaps, ndim)
 
-    interp.fit(nodes_fit, dist_batch)
+    interp.fit(nodes_fit, traj_batch)
     x_interp, dx_interp = interp.predict(nodes_eval)
 
-    psi_batch = psi_traj[:, xind].T[:, :, None]
+    psi_batch = psi_traj[traj_idx, :, None]  # (batch_size, n_snaps, 1)
+    # Interpolate log(psi) for stability; psi values can be close to zero
     log_psi_batch = torch.log(psi_batch.clamp_min(torch.finfo(dtype).tiny))
     growth_interp.fit(nodes_fit, log_psi_batch)
     log_psi_t, dlog_psi_t = growth_interp.predict(nodes_eval)
@@ -93,7 +94,7 @@ def UFM_OT_(
     n_epochs=2000,
     lr=1e-3,
     alpha_ann=0.5,
-    scheduler_kwargs=None,
+    scheduler_factory=None,
     ot="exact",
     reg=0.1,
     verbose=True,
@@ -127,8 +128,9 @@ def UFM_OT_(
         Learning rate for Adam optimizers.
     alpha_ann : float, default=0.5
         Unused placeholder kept for API stability.
-    scheduler_kwargs : dict or None, default=None
-        Optional kwargs passed to ``MultiStepLR``.
+    scheduler_factory : callable or None, default=None
+        Callable ``(optimizer) -> scheduler``. If ``None``, uses
+        ``MultiStepLR`` with ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
     ot : str, default="exact"
         Pairwise OT backend name.
     reg : float, default=0.1
@@ -148,82 +150,67 @@ def UFM_OT_(
     _ = alpha_ann
     if interp is None:
         interp = LinearInterpolant()
+    device = dist[0].device
+    dtype = dist[0].dtype
 
-    nsamples = min(s.shape[0] for s in dist)
-    dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
-        dim=0,
-    )
-    device = dist_tensor.device
+    ot_trajs, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot, generator=generator)
+    nsamples, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
 
-    t_tensor = (
-        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
-        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
-    )
-    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-
-    if hasattr(net, 'init_model'):
-        net.init_model(scale_data, generator=generator)
-    if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data, generator=generator)
-
-    batch_ot_samples, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot, generator=generator)
-    nsnaps, nsamples, ndim = batch_ot_samples.shape
-
-    mass_vec = torch.ones((nsnaps,), dtype=dist_tensor.dtype, device=device)
+    mass_vec = torch.ones((nsnaps,), dtype=dtype, device=device)
     for k in range(1, nsnaps):
         mass_vec[k] = dist[k].shape[0] / dist[0].shape[0]
 
     uniform_kind = torch.linspace(
-        times[0], times[-1], fac * times.shape[0], dtype=dist_tensor.dtype, device=device
+        times[0], times[-1], fac * times.shape[0], dtype=dtype, device=device
     )
-    data_nodes = times[None, :].repeat(nsamples, 1)
-    uniform_nodes = uniform_kind.expand(nsamples, -1)
-
-    batch_size = nsamples if bs is None else bs
+    if bs is None:
+        batch_size = nsamples
+    else:
+        batch_size = bs
     uniform_batch = uniform_kind.expand(batch_size, -1)
     data_batch = times[None, :].expand(batch_size, -1)
 
-    batch_ot_samples_ = torch.permute(batch_ot_samples, (1, 0, 2))
     if isinstance(interp, ChebyshevInterpolant):
+        data_nodes = times[None, :].repeat(nsamples, 1)
+        uniform_nodes = uniform_kind.expand(nsamples, -1)
         best_lam, _, _ = select_best_lambda(
-            batch_ot_samples_,
+            ot_trajs,
             data_nodes,
             uniform_nodes,
             verbose=verbose,
         )
         interp.reg = best_lam
 
-    drift_net = net.to(device)
+    drift_net = net
     zero_growth = growth_model is None
-    if not zero_growth:
-        growth_model = growth_model.to(device)
 
-    scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
-    default_sched = {"milestones": [1000, 1500, 8000, 15000], "gamma": 0.1}
-    default_sched.update(scheduler_kwargs)
+    if scheduler_factory is None:
+        def scheduler_factory(opt):
+            return torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[1000, 1500, 8000, 15000], gamma=0.1)
 
     optimizer_growth = None
     scheduler_growth = None
     if not zero_growth:
         optimizer_growth = torch.optim.Adam(growth_model.parameters(), lr=lr)
-        scheduler_growth = torch.optim.lr_scheduler.MultiStepLR(optimizer_growth, **default_sched)
+        scheduler_growth = scheduler_factory(optimizer_growth)
 
     optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
-    scheduler_drift = torch.optim.lr_scheduler.MultiStepLR(optimizer_drift, **default_sched)
+    scheduler_drift = scheduler_factory(optimizer_drift)
 
     dt = uniform_kind[1] - uniform_kind[0]
     drift_loss_hist = []
     growth_loss_hist = []
 
+    # Phase 1: fit growth to match observed snapshot masses
     if not zero_growth:
         pbar_g = tqdm(range(n_epochs), desc="ufm_ot-growth", dynamic_ncols=True, disable=not verbose)
         for _ in pbar_g:
             xtrain, _ = compute_conditional_distributions(
-                interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
+                interp, ot_trajs, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
             )
             optimizer_growth.zero_grad()
             growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
+            # Trapezoidal integration: d/dt log(mass) = g(t)
             log_mass = torch.zeros_like(growth_eval)
             log_mass[:, 0] = np.log(1.0 / batch_size)
             for k in range(1, fac * nsnaps):
@@ -239,10 +226,11 @@ def UFM_OT_(
     else:
         growth_loss_hist = [0.0] * n_epochs
 
+    # Phase 2: fit drift with frozen growth weights (no_grad)
     pbar_d = tqdm(range(n_epochs), desc="ufm_ot-drift", dynamic_ncols=True, disable=not verbose)
     for _ in pbar_d:
         xtrain, ytrain = compute_conditional_distributions(
-            interp, batch_ot_samples, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
+            interp, ot_trajs, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
         )
 
         if zero_growth:
@@ -251,6 +239,7 @@ def UFM_OT_(
         else:
             with torch.no_grad():
                 growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
+                # Recompute log_mass from frozen growth for trajectory weighting
                 log_mass = torch.zeros_like(growth_eval)
                 log_mass[:, 0] = np.log(1.0 / batch_size)
                 for k in range(1, fac * nsnaps):
@@ -285,7 +274,7 @@ def UFM_UOT_(
     nb=1,
     n_epochs=2000,
     lr=1e-3,
-    scheduler_kwargs=None,
+    scheduler_factory=None,
     reg=0.1,
     reg_m=10.0,
     ot="sinkhorn",
@@ -320,8 +309,9 @@ def UFM_UOT_(
         Number of optimizer iterations.
     lr : float, default=1e-3
         Learning rate for Adam optimizers.
-    scheduler_kwargs : dict or None, default=None
-        Optional kwargs passed to ``MultiStepLR``.
+    scheduler_factory : callable or None, default=None
+        Callable ``(optimizer) -> scheduler``. If ``None``, uses
+        ``MultiStepLR`` with ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
     reg : float, default=0.1
         Entropic regularization for OT solver.
     reg_m : float, default=10.0
@@ -342,45 +332,28 @@ def UFM_UOT_(
     """
     if interp is None:
         interp = LinearInterpolant()
-    no_growth = growth_model is None
-    if no_growth:
+    zero_growth = growth_model is None
+    if zero_growth:
         reg_m = None
-
+    device = dist[0].device
+    dtype = dist[0].dtype
     nsamples = min(s.shape[0] for s in dist)
-    dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device, generator=generator)[:nsamples]] for s in dist],
-        dim=0,
-    )
-    device = dist_tensor.device
 
-    t_tensor = (
-        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
-        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
-    )
-    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-
-    if hasattr(net, 'init_model'):
-        net.init_model(scale_data, generator=generator)
-    if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data, generator=generator)
-
-    batch_ot_samples, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot, generator=generator)
-    _, nsamples, ndim = batch_ot_samples.shape
+    ot_trajs, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot, generator=generator)
+    _, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
 
     uniform_kind = torch.linspace(
         times[0],
         times[-1],
         fac * times.shape[0],
-        dtype=dist_tensor.dtype,
+        dtype=dtype,
         device=device,
     )
-    data_nodes = times[None, :].repeat(nsamples, 1)
-    uniform_nodes = uniform_kind.expand(nsamples, -1)
-
-    batch_ot_samples_ = torch.permute(batch_ot_samples, (1, 0, 2))
     if isinstance(interp, ChebyshevInterpolant):
+        data_nodes = times[None, :].repeat(nsamples, 1)
+        uniform_nodes = uniform_kind.expand(nsamples, -1)
         best_lam, _, _ = select_best_lambda(
-            batch_ot_samples_,
+            ot_trajs,
             data_nodes,
             uniform_nodes,
             device,
@@ -388,25 +361,32 @@ def UFM_UOT_(
         )
         interp.reg = best_lam
 
-    batch_size = nsamples if bs is None else bs
+    if bs is None:
+        batch_size = nsamples
+    else:
+        batch_size = bs
     data_batch_nodes = times[None, :].repeat(batch_size, 1)
     uniform_batch_nodes = uniform_kind.expand(batch_size, -1)
 
-    drift_net = net.to(device)
-    growth_net = None if no_growth else growth_model.to(device)
+    drift_net = net
+    if zero_growth:
+        growth_net = None
+    else:
+        growth_net = growth_model
     growth_interp = LinearInterpolant() if growth_interp is None else growth_interp
 
+    if scheduler_factory is None:
+        def scheduler_factory(opt):
+            return torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[1000, 1500, 8000, 15000], gamma=0.1)
+
     optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
-    scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
-    default_sched = {"milestones": [1000, 1500, 8000, 15000], "gamma": 0.1}
-    default_sched.update(scheduler_kwargs)
-    scheduler_drift = torch.optim.lr_scheduler.MultiStepLR(optimizer_drift, **default_sched)
+    scheduler_drift = scheduler_factory(optimizer_drift)
 
     optimizer_growth = None
     scheduler_growth = None
     if growth_net is not None:
         optimizer_growth = torch.optim.Adam(growth_net.parameters(), lr=lr)
-        scheduler_growth = torch.optim.lr_scheduler.MultiStepLR(optimizer_growth, **default_sched)
+        scheduler_growth = scheduler_factory(optimizer_growth)
 
     flow_loss_hist = []
     growth_loss_hist = []
@@ -416,7 +396,7 @@ def UFM_UOT_(
             interp,
             growth_interp,
             psi_traj,
-            batch_ot_samples,
+            ot_trajs,
             batch_size,
             data_batch_nodes,
             uniform_batch_nodes,

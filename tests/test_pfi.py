@@ -118,7 +118,7 @@ def test_pfm_toggle_switch():
         f_solver="pfm",
         s_solver_kwargs={"L": 10,
                          "bs": None,
-                         "adp_flag": 1,
+                         "adaptive_weights": 1,
                          "lr": 5e-4,
                          "n_epochs": 2000},
         f_solver_kwargs={
@@ -181,7 +181,7 @@ def test_upfi_toggle_switch():
         f_solver="upfi",
         s_solver_kwargs={"L": 10,
                          "bs": None,
-                         "adp_flag": 1,
+                         "adaptive_weights": 1,
                          "lr": 5e-4,
                          "n_epochs": 2000},
         f_solver_kwargs={"n_steps": 2,

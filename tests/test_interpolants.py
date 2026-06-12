@@ -52,7 +52,7 @@ def test_chebyshev_interpolant_OU():
     nodes_fit = torch.tensor(tt, dtype=torch.float32)[None, :].repeat(nsamples, 1)
     nodes_eval = torch.tensor(np.linspace(tt[0], tt[-1], npoints), dtype=torch.float32)[None, :].repeat(nsamples, 1)
 
-    dist = torch.permute(batch_ot_samples[:, :, 0:ndim], (1, 0, 2))
+    dist = batch_ot_samples[:, :, 0:ndim]
 
     interp = ChebyshevInterpolant(reg = 0.01)
 

@@ -111,6 +111,26 @@ class DSMScore(GenericModelMixin, Model):
         super(DSMScore, self).__init__(**kwargs)
         self.noise_lvl = float(noise_lvl)
 
+    def init_model(self, X, generator=None):
+        """Initialize network and set noise_lvl from the minimum sigma in training data.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Noisy training inputs with last dimension ``ndim + 2``
+            (layout ``[x_1, ..., x_ndim, sigma, t]``).
+        generator : torch.Generator or None, default=None
+            Optional RNG for reproducible weight initialization.
+
+        Returns
+        -------
+        self : DSMScore
+            Initialized model.
+        """
+        super().init_model(X, generator=generator)
+        self.noise_lvl_ = float(X[..., self.Ndim_ - 1].min())
+        return self
+
     def dim_output(self):
         """Return spatial score output dimension.
 
@@ -184,7 +204,7 @@ class DSMScore(GenericModelMixin, Model):
         if Xtrain.shape[-1] == self.Ndim_:
             sigma = torch.full(
                 (*Xtrain.shape[:-1], 1),
-                self.noise_lvl,
+                self.noise_lvl_,
                 dtype=Xtrain.dtype,
                 device=Xtrain.device,
             )

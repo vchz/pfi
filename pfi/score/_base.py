@@ -24,8 +24,8 @@ class ScoreEstimator(BaseEstimator):
         Solver backend.
     solver_kwargs : dict, default=None
         Extra keyword arguments passed to the selected solver.
-        For ``solver='dsm'``, this can include ``scheduler_kwargs`` to
-        configure the internal ``MultiStepLR``.
+        For ``solver='dsm'``, this can include ``scheduler_factory`` to
+        configure the learning-rate scheduler.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
 
@@ -41,8 +41,8 @@ class ScoreEstimator(BaseEstimator):
         dimension ``ndim + 2``.
     loss_ : ndarray of shape (n_epochs,)
         Recorded training loss history.
-    min_noise_ : float
-        Minimum noise level used by the fitted DSM model.
+    sigma_ : torch.Tensor of shape (L,)
+        Noise schedule used by the fitted DSM model.
 
     """
 
@@ -126,12 +126,14 @@ class ScoreEstimator(BaseEstimator):
             model = DSMScore()
         else:
             model = clone_module(self.model)
+
         model = model.to(self.device)
         self.times_ = np.unique(X[:, -1])
         solver_kwargs = {} if self.solver_kwargs is None else dict(self.solver_kwargs)
 
         if self.solver == "dsm":
-            self.model_, loss_hist, min_noise = DSM_(
+            # init_model is called inside the solver using the noisy training data
+            self.model_, loss_hist, sigma = DSM_(
                 dist,
                 times,
                 model,
@@ -139,8 +141,7 @@ class ScoreEstimator(BaseEstimator):
                 **solver_kwargs,
             )
             self.loss_ = np.asarray(loss_hist)
-            self.min_noise_ = min_noise
-            self.model_.noise_lvl = max(self.min_noise_, self.model_.noise_lvl)
+            self.sigma_ = sigma
         else:
             raise NotImplementedError("Other score matching solvers not implemented yet.")
 
@@ -196,22 +197,22 @@ class ScoreEstimator(BaseEstimator):
 
         if self.solver == "dsm":
             nsamples = X.shape[0]
-            init_ = torch.zeros(
+            x0 = torch.zeros(
                 (nsamples, self.Ndim_ + 2),
                 dtype=torch.float32,
                 device=self.device,
             )
-            init_[:, 0 : self.Ndim_] = X[:, 0 : self.Ndim_] + 0.1 * torch.randn(
+            x0[:, 0 : self.Ndim_] = X[:, 0 : self.Ndim_] + 0.1 * torch.randn(
                 (nsamples, self.Ndim_),
                 dtype=torch.float32,
                 device=self.device,
             )
-            time_ = X[:, -1]
             with torch.no_grad():
                 gen = generate_data_DSM(
-                    infNet=self.model_,
-                    init_=init_,
-                    time_=time_,
+                    net=self.model_,
+                    x0=x0,
+                    times=X[:, -1],
+                    sigma=self.sigma_,
                     **kwargs,
                 )
             gen_xt = torch.cat(

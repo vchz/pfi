@@ -407,7 +407,7 @@ class SplineInterpolant(Interpolant):
         return eval_, derv_
 
 def select_best_lambda(
-    batch_ot_samples,
+    ot_trajs,
     data_batch,
     eval_batch,
     lam_vals=None,
@@ -418,10 +418,10 @@ def select_best_lambda(
 
     Parameters
     ----------
-    batch_ot_samples : torch.Tensor of shape (batch_size, n_nodes, ndim)
-        Trajectories used for interpolation fitting.
+    ot_trajs : torch.Tensor of shape (ntraj, n_nodes, ndim)
+        OT-stitched trajectories used for interpolation fitting.
     data_batch : torch.Tensor of shape (batch_size, n_nodes)
-        Fit nodes corresponding to ``batch_ot_samples``.
+        Fit nodes corresponding to ``ot_trajs``.
     eval_batch : torch.Tensor of shape (batch_size, n_eval)
         Evaluation nodes used to estimate derivative magnitude.
     lam_vals : array-like or None, default=None
@@ -450,7 +450,7 @@ def select_best_lambda(
     vel_mag = np.zeros_like(lam_arr)
     for k, lam in enumerate(lam_arr):
         interpolant = ChebyshevInterpolant(reg=lam)
-        interpolant.fit(data_batch, batch_ot_samples)
+        interpolant.fit(data_batch, ot_trajs)
         _, dx_interp = interpolant.predict(eval_batch)
         vel_mag[k] = torch.mean(dx_interp ** 2).cpu().item()
 
