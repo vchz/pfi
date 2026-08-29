@@ -28,6 +28,9 @@ class ScoreEstimator(BaseEstimator):
         configure the learning-rate scheduler.
     device : str or torch.device, default='cpu'
         Device used for training and inference.
+    random_state : int or None
+            Seed value. If ``None``, a random seed is drawn from the default
+            global generator.
 
     Attributes
     ----------

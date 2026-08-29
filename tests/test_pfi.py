@@ -91,7 +91,6 @@ def test_pfm_toggle_switch():
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm="zscore",
-        noise_lvl=0.1,
     )
     flow_model = CLEFlow(
         score=None,
@@ -154,7 +153,6 @@ def test_upfi_toggle_switch():
         activation=nn.ELU(),
         feature_norm=None,
         batch_norm="zscore",
-        noise_lvl=0.1,
     )
     flow_model = CLEFlow(
         score=None,

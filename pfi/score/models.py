@@ -96,8 +96,6 @@ class DSMScore(GenericModelMixin, Model):
 
     Parameters
     ----------
-    noise_lvl : float, default=0.0
-        Default sigma used at inference when sigma is not provided.
     **kwargs : dict
         Forwarded to ``pfi.base.Model``.
 
@@ -105,11 +103,9 @@ class DSMScore(GenericModelMixin, Model):
 
     def __init__(
         self,
-        noise_lvl=0.0,
         **kwargs,
     ):
         super(DSMScore, self).__init__(**kwargs)
-        self.noise_lvl = float(noise_lvl)
 
     def init_model(self, X, generator=None):
         """Initialize network and set noise_lvl from the minimum sigma in training data.

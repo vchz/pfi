@@ -40,6 +40,9 @@ class FlowEstimator(BaseEstimator):
         Extra keyword arguments forwarded to the selected solver.
     device : str or torch.device, default='cpu'
         Device used for fitting and inference.
+    random_state : int or None
+            Seed value. If ``None``, a random seed is drawn from the default
+            global generator.
 
     Attributes
     ----------
@@ -128,12 +131,14 @@ class FlowEstimator(BaseEstimator):
         solver_func = SOLVER_FUNCS.get(self.solver)
         if solver_func is None:
             raise ValueError(f"Unknown solver '{self.solver}'.")
-
-        if self.flow is None:
-            flow = AutonomousODEFlow().to(self.device)
-        else:
+        
+        flow = AutonomousODEFlow().to(self.device)
+        if self.flow is not None:
             flow = clone_module(self.flow).to(self.device)
-        growth = clone_module(self.growth).to(self.device) if self.growth is not None else None
+
+        growth = None
+        if self.growth is not None:
+            growth = clone_module(self.growth).to(self.device)
 
         X_tensor = torch.tensor(X, dtype=torch.float32, device=self.device)
         if hasattr(flow, "init_model"):

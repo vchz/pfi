@@ -46,7 +46,6 @@ def test_dsm_OU():
         sizes=[Np, Np, Np, Np, Np],
         spectral_norm=False,
         activation=nn.ELU(),
-        noise_lvl=0.0,
         batch_norm='zscore'
     ).to(device)
 
