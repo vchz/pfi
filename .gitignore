@@ -4,3 +4,6 @@ deploy.sh
 *$py.class
 # work in progress: exploratory notebooks, scripts and figures (not part of the package)
 sandbox/
+
+# documentation build (published to gh-pages by deploy.sh)
+site/
