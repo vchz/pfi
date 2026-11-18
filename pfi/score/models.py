@@ -137,30 +137,16 @@ class DSMScore(GenericModelMixin, Model):
         """
         return self.Ndim_ - 1
 
-    def _apply_feature_norm(self, x):
-        """Apply feature normalization on spatial dimensions only.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor where the final dimensions are ordered as
-            ``[..., x_1, ..., x_ndim, sigma, t]``.
+    def dim_spatial(self):
+        """Return number of spatial dimension of the score network.
 
         Returns
         -------
-        torch.Tensor
-            Normalized tensor with sigma/time dimensions left unchanged.
+        int
+            Number of spatial dimension in net_ (by definition the first dimensions).
         """
-        if not self.feature_norm or "zscore" not in self.feature_norm:
-            return x
-
-        x_sp = x[..., : self.Ndim_ - 1]
-        center = "nocenter" not in self.feature_norm
-        mu = x_sp.mean(dim=-1, keepdim=True) if center else 0
-        sd = x_sp.std(dim=-1, keepdim=True, unbiased=True)
-        x_sp = (x_sp - mu) / (sd + 1e-5)
-        return torch.cat([x_sp, x[..., self.Ndim_ - 1 :]], dim=-1)
-
+        return self.Ndim_ - 1
+    
     def forward(self, Xtrain):
         """Evaluate DSM score.
 
