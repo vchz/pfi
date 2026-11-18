@@ -68,7 +68,7 @@ est = make_pfi_estimator(
     s_solver="dsm",
     f_solver="pfm",
     s_solver_kwargs={"L": 5, "lr": 5e-4, "n_epochs": 4000},
-    f_solver_kwargs={"fac": 2, "nb": 1, "lr": 1e-3, "n_epochs": 2000},
+    f_solver_kwargs={"fac": 2, "lr": 1e-3, "n_epochs": 2000},
     device=device,
     random_state=0,
 )
@@ -110,7 +110,7 @@ flow_est = FlowEstimator(
     flow=CLEFlow(score=score_est.model_, lx=0.3),
     growth=AutonomousGrowth(),
     solver="pfm",
-    solver_kwargs={"fac": 2, "nb": 1, "lr": 1e-3, "n_epochs": 2000},
+    solver_kwargs={"fac": 2, "lr": 1e-3, "n_epochs": 2000},
     device=device,
 )
 flow_est.fit(X)

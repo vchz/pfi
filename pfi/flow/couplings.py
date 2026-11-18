@@ -101,7 +101,7 @@ def _sample_trajectory(plan_list, num_samples, generator=None):
     for k in range(len(plan_list)):
         probs = plan_list[k][traj[k]]
         probs = probs / probs.sum(dim=1, keepdim=True)
-        next_idx = torch.multinomial(probs, num_samples=1).squeeze(1)
+        next_idx = torch.multinomial(probs, num_samples=1, generator=generator).squeeze(1)
         traj.append(next_idx)
     return traj
 

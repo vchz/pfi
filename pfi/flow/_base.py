@@ -10,13 +10,14 @@ from sklearn.utils._param_validation import HasMethods, StrOptions
 from sklearn_compat.utils.validation import validate_data
 from ..utils.data import snapshots_from_X, check_random_state_torch
 from ..utils.nns import clone_module
-from .solvers import PFM_, UPFI_
+from .solvers import PFM_, PFM_LINEAR_, UPFI_
 from .solvers.future import UFM_UOT_, UFM_OT_
 from .solvers.external import DeepRUOTv2_
 from .models import AutonomousODEFlow
 
 SOLVER_FUNCS = {
     "pfm": PFM_,
+    "pfm-linear": PFM_LINEAR_,
     "upfi": UPFI_,
     "external.deepruotv2": DeepRUOTv2_,
     "future.ufm_uot": UFM_UOT_,

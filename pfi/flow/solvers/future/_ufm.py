@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from ...couplings import pairwise_OT
 from ...interpolants import ChebyshevInterpolant, LinearInterpolant, select_best_lambda
-from .._pfm import compute_conditional_distributions
+from .._pfm import compute_conditional_distributions, _model_push
+from ...paths import ExactOT, Sinkhorn, UnbalancedSinkhorn, MapPaths
 
 def compute_conditional_distributions_unbalanced(
     interp,
@@ -90,13 +90,13 @@ def UFM_OT_(
     growth_model=None,
     bs=None,
     fac=1,
-    nb=1,
     n_epochs=2000,
     lr=1e-3,
     alpha_ann=0.5,
     scheduler_factory=None,
-    ot="exact",
-    reg=0.1,
+    paths=None,
+    n_rounds=1,
+    push_steps=8,
     verbose=True,
     generator=None,
 ):
@@ -120,8 +120,6 @@ def UFM_OT_(
         use all sampled trajectories.
     fac : int, default=1
         Number of interpolation nodes per snapshot interval multiplier.
-    nb : int, default=1
-        Number of OT minibatches.
     n_epochs : int, default=2000
         Number of optimizer iterations for each phase.
     lr : float, default=1e-3
@@ -131,10 +129,15 @@ def UFM_OT_(
     scheduler_factory : callable or None, default=None
         Callable ``(optimizer) -> scheduler``. If ``None``, uses
         ``MultiStepLR`` with ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
-    ot : str, default="exact"
-        Pairwise OT backend name.
-    reg : float, default=0.1
-        Entropic regularization for OT solver.
+    paths : pfi.flow.paths.PathEnsemble or None, default=None
+        Path ensemble providing the trajectories (``fit(dist, push)`` then
+        ``sample()``). If ``None``, ``ExactOT()``.
+    n_rounds : int, default=1
+        Number of rounds of the iterated coupling: every round after the first
+        builds the paths again with the current model as reference dynamics
+        (see ``pfi.flow.paths``) and repeats the training. ``1``: no iteration.
+    push_steps : int, default=8
+        Runge-Kutta 4 steps per snapshot interval when pushing with the model.
     verbose : bool, default=True
         If ``True``, display progress bars.
 
@@ -153,112 +156,159 @@ def UFM_OT_(
     device = dist[0].device
     dtype = dist[0].dtype
 
-    ot_trajs, _ = pairwise_OT(dist, nb=nb, reg=reg, reg_m=None, method=ot, generator=generator)
-    nsamples, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
+    if paths is None:
+        paths = ExactOT()
 
-    mass_vec = torch.ones((nsnaps,), dtype=dtype, device=device)
-    for k in range(1, nsnaps):
-        mass_vec[k] = dist[k].shape[0] / dist[0].shape[0]
-
-    uniform_kind = torch.linspace(
-        times[0], times[-1], fac * times.shape[0], dtype=dtype, device=device
-    )
-    if bs is None:
-        batch_size = nsamples
-    else:
-        batch_size = bs
-    uniform_batch = uniform_kind.expand(batch_size, -1)
-    data_batch = times[None, :].expand(batch_size, -1)
-
-    if isinstance(interp, ChebyshevInterpolant):
-        data_nodes = times[None, :].repeat(nsamples, 1)
-        uniform_nodes = uniform_kind.expand(nsamples, -1)
-        best_lam, _, _ = select_best_lambda(
-            ot_trajs,
-            data_nodes,
-            uniform_nodes,
-            verbose=verbose,
-        )
-        interp.reg = best_lam
-
-    drift_net = net
-    zero_growth = growth_model is None
-
-    if scheduler_factory is None:
-        def scheduler_factory(opt):
-            return torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[1000, 1500, 8000, 15000], gamma=0.1)
-
-    optimizer_growth = None
-    scheduler_growth = None
-    if not zero_growth:
-        optimizer_growth = torch.optim.Adam(growth_model.parameters(), lr=lr)
-        scheduler_growth = scheduler_factory(optimizer_growth)
-
-    optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
-    scheduler_drift = scheduler_factory(optimizer_drift)
-
-    dt = uniform_kind[1] - uniform_kind[0]
     drift_loss_hist = []
     growth_loss_hist = []
+    for rnd in range(n_rounds):
+        push = None if rnd == 0 else _model_push(net, times, push_steps)
+        paths.fit(dist, push=push, generator=generator)
+        ot_trajs, _ = paths.sample(generator=generator)
+        if verbose and n_rounds > 1:
+            print(f"ufm_ot: round {rnd + 1}/{n_rounds}", flush=True)
+        nsamples, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
 
-    # Phase 1: fit growth to match observed snapshot masses
-    if not zero_growth:
-        pbar_g = tqdm(range(n_epochs), desc="ufm_ot-growth", dynamic_ncols=True, disable=not verbose)
-        for _ in pbar_g:
-            xtrain, _ = compute_conditional_distributions(
-                interp, ot_trajs, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
-            )
-            optimizer_growth.zero_grad()
-            growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
-            # Trapezoidal integration: d/dt log(mass) = g(t)
-            log_mass = torch.zeros_like(growth_eval)
-            log_mass[:, 0] = np.log(1.0 / batch_size)
-            for k in range(1, fac * nsnaps):
-                log_mass[:, k] = log_mass[:, k - 1] + 0.5 * dt * (growth_eval[:, k] + growth_eval[:, k - 1])
-            mass_traj = torch.exp(log_mass)
-            growth_loss = torch.sum((torch.sum(mass_traj, axis=0)[::fac] - mass_vec) ** 2)
-            growth_loss.backward()
-            optimizer_growth.step()
-            scheduler_growth.step()
-            growth_loss_hist.append(growth_loss.item())
-            if verbose:
-                pbar_g.set_postfix(growth=f"{growth_loss.item():.3e}", lr=f"{optimizer_growth.param_groups[0]['lr']:.2e}")
-    else:
-        growth_loss_hist = [0.0] * n_epochs
+        mass_vec = torch.ones((nsnaps,), dtype=dtype, device=device)
+        for k in range(1, nsnaps):
+            mass_vec[k] = dist[k].shape[0] / dist[0].shape[0]
 
-    # Phase 2: fit drift with frozen growth weights (no_grad)
-    pbar_d = tqdm(range(n_epochs), desc="ufm_ot-drift", dynamic_ncols=True, disable=not verbose)
-    for _ in pbar_d:
-        xtrain, ytrain = compute_conditional_distributions(
-            interp, ot_trajs, batch_size, data_batch, uniform_batch, device=device, sigma=0.001, generator=generator,
+        uniform_kind = torch.linspace(
+            times[0], times[-1], fac * times.shape[0], dtype=dtype, device=device
         )
-
-        if zero_growth:
-            mass_traj = torch.ones((batch_size, fac * nsnaps), dtype=xtrain.dtype, device=device)
-            growth_value = 0.0
+        if bs is None:
+            batch_size = nsamples
         else:
-            with torch.no_grad():
+            batch_size = bs
+        uniform_batch = uniform_kind.expand(batch_size, -1)
+        data_batch = times[None, :].expand(batch_size, -1)
+
+        if isinstance(interp, ChebyshevInterpolant):
+            data_nodes = times[None, :].repeat(nsamples, 1)
+            uniform_nodes = uniform_kind.expand(nsamples, -1)
+            best_lam, _, _ = select_best_lambda(
+                ot_trajs,
+                data_nodes,
+                uniform_nodes,
+                verbose=verbose,
+            )
+            interp.reg = best_lam
+
+        drift_net = net
+        zero_growth = growth_model is None
+
+        if scheduler_factory is None:
+            def scheduler_factory(opt):
+                return torch.optim.lr_scheduler.MultiStepLR(
+                    opt,
+                    milestones=[1000, 1500, 8000, 15000],
+                    gamma=0.1,
+                )
+
+        optimizer_growth = None
+        scheduler_growth = None
+        if not zero_growth:
+            optimizer_growth = torch.optim.Adam(growth_model.parameters(), lr=lr)
+            scheduler_growth = scheduler_factory(optimizer_growth)
+
+        optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
+        scheduler_drift = scheduler_factory(optimizer_drift)
+
+        dt = uniform_kind[1] - uniform_kind[0]
+
+        # Phase 1: fit growth to match observed snapshot masses
+        if not zero_growth:
+            pbar_g = tqdm(
+                range(n_epochs),
+                desc="ufm_ot-growth",
+                dynamic_ncols=True,
+                disable=not verbose,
+            )
+            for _ in pbar_g:
+                xtrain, _ = compute_conditional_distributions(
+                    interp,
+                    ot_trajs,
+                    batch_size,
+                    data_batch,
+                    uniform_batch,
+                    device=device,
+                    sigma=0.001,
+                    generator=generator,
+                )
+                optimizer_growth.zero_grad()
                 growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
-                # Recompute log_mass from frozen growth for trajectory weighting
+                # Trapezoidal integration: d/dt log(mass) = g(t)
                 log_mass = torch.zeros_like(growth_eval)
                 log_mass[:, 0] = np.log(1.0 / batch_size)
                 for k in range(1, fac * nsnaps):
-                    log_mass[:, k] = log_mass[:, k - 1] + 0.5 * dt * (growth_eval[:, k] + growth_eval[:, k - 1])
+                    log_mass[:, k] = (
+                        log_mass[:, k - 1] + 0.5 * dt * (growth_eval[:, k] + growth_eval[:, k - 1])
+                    )
                 mass_traj = torch.exp(log_mass)
-            growth_value = growth_loss_hist[-1] if growth_loss_hist else 0.0
+                growth_loss = torch.sum((torch.sum(mass_traj, axis=0)[::fac] - mass_vec) ** 2)
+                growth_loss.backward()
+                optimizer_growth.step()
+                scheduler_growth.step()
+                growth_loss_hist.append(growth_loss.item())
+                if verbose:
+                    pbar_g.set_postfix(
+                        growth=f"{growth_loss.item():.3e}",
+                        lr=f"{optimizer_growth.param_groups[0]['lr']:.2e}",
+                    )
+        else:
+            growth_loss_hist += [0.0] * n_epochs
 
-        optimizer_drift.zero_grad()
-        drift_pred = drift_net(xtrain)
-        res = (drift_pred - ytrain).pow(2).sum(dim=1).reshape(batch_size, fac * nsnaps)
-        drift_loss = torch.sum(torch.mean(mass_traj * res, axis=0))
-        drift_loss.backward()
-        optimizer_drift.step()
-        scheduler_drift.step()
+        # Phase 2: fit drift with frozen growth weights (no_grad)
+        pbar_d = tqdm(range(n_epochs), desc="ufm_ot-drift", dynamic_ncols=True, disable=not verbose)
+        for _ in pbar_d:
+            xtrain, ytrain = compute_conditional_distributions(
+                interp,
+                ot_trajs,
+                batch_size,
+                data_batch,
+                uniform_batch,
+                device=device,
+                sigma=0.001,
+                generator=generator,
+            )
 
-        drift_loss_hist.append(drift_loss.item())
-        if verbose:
-            lr_drift = optimizer_drift.param_groups[0]["lr"]
-            pbar_d.set_postfix(drift=f"{drift_loss.item():.3e}", growth=f"{growth_value:.3e}", lr=f"{lr_drift:.2e}")
+            if zero_growth:
+                mass_traj = torch.ones(
+                    (batch_size, fac * nsnaps),
+                    dtype=xtrain.dtype,
+                    device=device,
+                )
+                growth_value = 0.0
+            else:
+                with torch.no_grad():
+                    growth_eval = growth_model(xtrain[:, :ndim]).reshape(batch_size, fac * nsnaps)
+                    # Recompute log_mass from frozen growth for trajectory weighting
+                    log_mass = torch.zeros_like(growth_eval)
+                    log_mass[:, 0] = np.log(1.0 / batch_size)
+                    for k in range(1, fac * nsnaps):
+                        log_mass[:, k] = (
+                            log_mass[:, k - 1]
+                            + 0.5 * dt * (growth_eval[:, k] + growth_eval[:, k - 1])
+                        )
+                    mass_traj = torch.exp(log_mass)
+                growth_value = growth_loss_hist[-1] if growth_loss_hist else 0.0
+
+            optimizer_drift.zero_grad()
+            drift_pred = drift_net(xtrain)
+            res = (drift_pred - ytrain).pow(2).sum(dim=1).reshape(batch_size, fac * nsnaps)
+            drift_loss = torch.sum(torch.mean(mass_traj * res, axis=0))
+            drift_loss.backward()
+            optimizer_drift.step()
+            scheduler_drift.step()
+
+            drift_loss_hist.append(drift_loss.item())
+            if verbose:
+                lr_drift = optimizer_drift.param_groups[0]["lr"]
+                pbar_d.set_postfix(
+                    drift=f"{drift_loss.item():.3e}",
+                    growth=f"{growth_value:.3e}",
+                    lr=f"{lr_drift:.2e}",
+                )
 
     return drift_net, growth_model, [drift_loss_hist, growth_loss_hist]
 
@@ -271,13 +321,12 @@ def UFM_UOT_(
     growth_interp=None,
     bs=None,
     fac=1,
-    nb=1,
     n_epochs=2000,
     lr=1e-3,
     scheduler_factory=None,
-    reg=0.1,
-    reg_m=10.0,
-    ot="sinkhorn",
+    paths=None,
+    n_rounds=1,
+    push_steps=8,
     verbose=True,
     generator=None,
 ):
@@ -303,8 +352,6 @@ def UFM_UOT_(
         use all sampled trajectories.
     fac : int, default=1
         Number of interpolation nodes per snapshot interval multiplier.
-    nb : int, default=1
-        Number of OT minibatches.
     n_epochs : int, default=2000
         Number of optimizer iterations.
     lr : float, default=1e-3
@@ -312,12 +359,19 @@ def UFM_UOT_(
     scheduler_factory : callable or None, default=None
         Callable ``(optimizer) -> scheduler``. If ``None``, uses
         ``MultiStepLR`` with ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
-    reg : float, default=0.1
-        Entropic regularization for OT solver.
-    reg_m : float, default=10.0
-        Mass regularization for unbalanced OT. Ignored if ``growth_model`` is ``None``.
-    ot : str, default="sinkhorn"
-        Pairwise OT backend name.
+    paths : pfi.flow.paths.PathEnsemble or None, default=None
+        Path ensemble providing the trajectories (``fit(dist, push)`` then
+        ``sample()``). If ``None``, ``UnbalancedSinkhorn(reg=0.1, reg_m=10.0)``
+        with a growth model, else ``Sinkhorn(reg=0.1)``. Map-based paths
+        (e.g. ``DebiasedSinkhorn``) are not supported, and with a growth model
+        the paths must carry masses (``paths.weighted``, e.g.
+        ``UnbalancedSinkhorn``).
+    n_rounds : int, default=1
+        Number of rounds of the iterated coupling: every round after the first
+        builds the paths again with the current model as reference dynamics
+        (see ``pfi.flow.paths``) and repeats the training. ``1``: no iteration.
+    push_steps : int, default=8
+        Runge-Kutta 4 steps per snapshot interval when pushing with the model.
     verbose : bool, default=True
         If ``True``, display progress bars.
 
@@ -333,110 +387,130 @@ def UFM_UOT_(
     if interp is None:
         interp = LinearInterpolant()
     zero_growth = growth_model is None
-    if zero_growth:
-        reg_m = None
     device = dist[0].device
     dtype = dist[0].dtype
     nsamples = min(s.shape[0] for s in dist)
 
-    ot_trajs, psi_traj = pairwise_OT(dist, nb=nb, reg=reg, reg_m=reg_m, method=ot, generator=generator)
-    _, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
-
-    uniform_kind = torch.linspace(
-        times[0],
-        times[-1],
-        fac * times.shape[0],
-        dtype=dtype,
-        device=device,
-    )
-    if isinstance(interp, ChebyshevInterpolant):
-        data_nodes = times[None, :].repeat(nsamples, 1)
-        uniform_nodes = uniform_kind.expand(nsamples, -1)
-        best_lam, _, _ = select_best_lambda(
-            ot_trajs,
-            data_nodes,
-            uniform_nodes,
-            device,
-            verbose=verbose,
+    if paths is None:
+        paths = Sinkhorn(reg=0.1) if zero_growth else UnbalancedSinkhorn(reg=0.1, reg_m=10.0)
+    if isinstance(paths, MapPaths):
+        raise ValueError(
+            "UFM_UOT_ does not support map-based paths (e.g. DebiasedSinkhorn): "
+            "they carry no masses."
         )
-        interp.reg = best_lam
-
-    if bs is None:
-        batch_size = nsamples
-    else:
-        batch_size = bs
-    data_batch_nodes = times[None, :].repeat(batch_size, 1)
-    uniform_batch_nodes = uniform_kind.expand(batch_size, -1)
-
-    drift_net = net
-    if zero_growth:
-        growth_net = None
-    else:
-        growth_net = growth_model
-    growth_interp = LinearInterpolant() if growth_interp is None else growth_interp
-
-    if scheduler_factory is None:
-        def scheduler_factory(opt):
-            return torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[1000, 1500, 8000, 15000], gamma=0.1)
-
-    optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
-    scheduler_drift = scheduler_factory(optimizer_drift)
-
-    optimizer_growth = None
-    scheduler_growth = None
-    if growth_net is not None:
-        optimizer_growth = torch.optim.Adam(growth_net.parameters(), lr=lr)
-        scheduler_growth = scheduler_factory(optimizer_growth)
+    if not zero_growth and not paths.weighted:
+        raise ValueError(
+            "With a growth model, UFM_UOT_ needs paths that carry masses "
+            "(e.g. UnbalancedSinkhorn)."
+        )
 
     flow_loss_hist = []
     growth_loss_hist = []
-    pbar = tqdm(range(n_epochs), desc="ufm_uot", dynamic_ncols=True, disable=not verbose)
-    for _ in pbar:
-        xtrain, ytrain, wtrain, gtrain = compute_conditional_distributions_unbalanced(
-            interp,
-            growth_interp,
-            psi_traj,
-            ot_trajs,
-            batch_size,
-            data_batch_nodes,
-            uniform_batch_nodes,
-            sigma=0.001,
-            generator=generator,
+    for rnd in range(n_rounds):
+        push = None if rnd == 0 else _model_push(net, times, push_steps)
+        paths.fit(dist, push=push, generator=generator)
+        ot_trajs, psi_traj = paths.sample(generator=generator)
+        if verbose and n_rounds > 1:
+            print(f"ufm_uot: round {rnd + 1}/{n_rounds}", flush=True)
+        _, nsnaps, ndim = ot_trajs.shape  # trajectory-first: (ntraj, nsnaps, ndim)
+
+        uniform_kind = torch.linspace(
+            times[0],
+            times[-1],
+            fac * times.shape[0],
+            dtype=dtype,
+            device=device,
         )
+        if isinstance(interp, ChebyshevInterpolant):
+            data_nodes = times[None, :].repeat(nsamples, 1)
+            uniform_nodes = uniform_kind.expand(nsamples, -1)
+            best_lam, _, _ = select_best_lambda(
+                ot_trajs,
+                data_nodes,
+                uniform_nodes,
+                device,
+                verbose=verbose,
+            )
+            interp.reg = best_lam
 
-        optimizer_drift.zero_grad()
-        drift_pred = drift_net(xtrain)
-        loss_flow = torch.mean(wtrain * (drift_pred - ytrain).pow(2).sum(dim=1))
-        loss_flow.backward()
-        optimizer_drift.step()
-        scheduler_drift.step()
-
-        if growth_net is None:
-            growth_value = 0.0
+        if bs is None:
+            batch_size = nsamples
         else:
-            optimizer_growth.zero_grad()
-            growth_pred = growth_net(xtrain[:, :ndim]).squeeze(-1)
-            loss_growth = torch.mean(wtrain * (growth_pred - gtrain).pow(2))
-            loss_growth.backward()
-            optimizer_growth.step()
-            scheduler_growth.step()
-            growth_value = loss_growth.item()
+            batch_size = bs
+        data_batch_nodes = times[None, :].repeat(batch_size, 1)
+        uniform_batch_nodes = uniform_kind.expand(batch_size, -1)
 
-        flow_loss_hist.append(loss_flow.item())
-        growth_loss_hist.append(growth_value)
+        drift_net = net
+        if zero_growth:
+            growth_net = None
+        else:
+            growth_net = growth_model
+        growth_interp = LinearInterpolant() if growth_interp is None else growth_interp
 
-        if verbose:
-            lr_drift = optimizer_drift.param_groups[0]["lr"]
-            if growth_net is None:
-                pbar.set_postfix(flow=f"{loss_flow.item():.3e}", lr=f"{lr_drift:.2e}")
-            else:
-                lr_growth = optimizer_growth.param_groups[0]["lr"]
-                pbar.set_postfix(
-                    flow=f"{loss_flow.item():.3e}",
-                    growth=f"{growth_value:.3e}",
-                    lr_f=f"{lr_drift:.2e}",
-                    lr_g=f"{lr_growth:.2e}",
+        if scheduler_factory is None:
+            def scheduler_factory(opt):
+                return torch.optim.lr_scheduler.MultiStepLR(
+                    opt,
+                    milestones=[1000, 1500, 8000, 15000],
+                    gamma=0.1,
                 )
+
+        optimizer_drift = torch.optim.Adam(drift_net.parameters(), lr=lr)
+        scheduler_drift = scheduler_factory(optimizer_drift)
+
+        optimizer_growth = None
+        scheduler_growth = None
+        if growth_net is not None:
+            optimizer_growth = torch.optim.Adam(growth_net.parameters(), lr=lr)
+            scheduler_growth = scheduler_factory(optimizer_growth)
+
+        pbar = tqdm(range(n_epochs), desc="ufm_uot", dynamic_ncols=True, disable=not verbose)
+        for _ in pbar:
+            xtrain, ytrain, wtrain, gtrain = compute_conditional_distributions_unbalanced(
+                interp,
+                growth_interp,
+                psi_traj,
+                ot_trajs,
+                batch_size,
+                data_batch_nodes,
+                uniform_batch_nodes,
+                sigma=0.001,
+                generator=generator,
+            )
+
+            optimizer_drift.zero_grad()
+            drift_pred = drift_net(xtrain)
+            loss_flow = torch.mean(wtrain * (drift_pred - ytrain).pow(2).sum(dim=1))
+            loss_flow.backward()
+            optimizer_drift.step()
+            scheduler_drift.step()
+
+            if growth_net is None:
+                growth_value = 0.0
+            else:
+                optimizer_growth.zero_grad()
+                growth_pred = growth_net(xtrain[:, :ndim]).squeeze(-1)
+                loss_growth = torch.mean(wtrain * (growth_pred - gtrain).pow(2))
+                loss_growth.backward()
+                optimizer_growth.step()
+                scheduler_growth.step()
+                growth_value = loss_growth.item()
+
+            flow_loss_hist.append(loss_flow.item())
+            growth_loss_hist.append(growth_value)
+
+            if verbose:
+                lr_drift = optimizer_drift.param_groups[0]["lr"]
+                if growth_net is None:
+                    pbar.set_postfix(flow=f"{loss_flow.item():.3e}", lr=f"{lr_drift:.2e}")
+                else:
+                    lr_growth = optimizer_growth.param_groups[0]["lr"]
+                    pbar.set_postfix(
+                        flow=f"{loss_flow.item():.3e}",
+                        growth=f"{growth_value:.3e}",
+                        lr_f=f"{lr_drift:.2e}",
+                        lr_g=f"{lr_growth:.2e}",
+                    )
 
     return drift_net, growth_net, [flow_loss_hist, growth_loss_hist]
 

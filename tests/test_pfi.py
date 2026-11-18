@@ -122,7 +122,6 @@ def test_pfm_toggle_switch():
                          "n_epochs": 2000},
         f_solver_kwargs={
             "interp": ChebyshevInterpolant(),
-            "nb": 1,
             "fac": 2,
             "lr": 1e-3,
             "n_epochs": 2000,

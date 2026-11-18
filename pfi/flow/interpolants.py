@@ -111,7 +111,7 @@ class LinearInterpolant(Interpolant):
         deriv = torch.where(delta_t != 0, (y1 - y0) / delta_t, torch.zeros_like(y0))
         return interp, deriv
 
-def chebyshev_basis_matrix(s, degree):
+def chebyshev_basis_matrix(s, degree, dtype=torch.float32):
     """Compute first-kind Chebyshev basis values.
 
     Parameters
@@ -120,16 +120,18 @@ def chebyshev_basis_matrix(s, degree):
         Scaled coordinates in ``[-1, 1]``.
     degree : int
         Maximum polynomial degree.
+    dtype : torch.dtype, default=torch.float32
+        Precision of the computation.
 
     Returns
     -------
     basis : torch.Tensor of shape (..., degree + 1)
         Values of ``T_k(s)`` for ``k = 0, ..., degree``.
     """
-    s = s.to(dtype=torch.float32)
+    s = s.to(dtype=dtype)
     device = s.device
 
-    vals = [torch.ones_like(s, dtype=torch.float32, device=device), s]
+    vals = [torch.ones_like(s, dtype=dtype, device=device), s]
     for n in range(2, degree + 1):
         vals.append(2 * s * vals[-1] - vals[-2])
     return torch.stack(vals, dim=-1)
@@ -159,6 +161,39 @@ def chebyshev_U_basis_matrix(s, degree):
         vals.append(2 * s * vals[-1] - vals[-2])
     return torch.stack(vals, dim=-1)
 
+def chebyshev_time_curvature_matrix(degree, n_quad=64):
+    """Penalty matrix of the squared second derivative in the rescaled time.
+
+    ``R[k, l] = int_{-1}^{1} T_k''(s) T_l''(s) ds``, so that for ``x(s) = sum_k c_k T_k(s)``,
+    ``c^T R c = int_{-1}^{1} |x''(s)|^2 ds``. Computed by Gauss-Legendre quadrature, exact
+    for ``n_quad > degree - 2``.
+
+    Parameters
+    ----------
+    degree : int
+        Polynomial degree.
+    n_quad : int, default=64
+        Number of quadrature points.
+
+    Returns
+    -------
+    torch.Tensor of shape (degree + 1, degree + 1)
+        Penalty matrix (float64).
+    """
+    s, w = np.polynomial.legendre.leggauss(n_quad)
+    d2 = np.stack(
+        [
+            np.polynomial.chebyshev.chebval(
+                s,
+                np.polynomial.chebyshev.chebder(np.eye(degree + 1)[k], 2),
+            )
+            for k in range(degree + 1)
+        ],
+        axis=1,
+    )
+    return torch.as_tensor(d2.T @ (w[:, None] * d2), dtype=torch.float64)
+
+
 def batched_chebyshev_interpolate(
     t_points,
     x_points,
@@ -178,8 +213,11 @@ def batched_chebyshev_interpolate(
         Polynomial degree. If ``None``, use ``n_nodes - 1``.
     lambda_reg : float or None, default=None
         Regularization strength. ``None`` is treated as ``0.0``.
-    penalty : {'none', 'l2', 'velocity', 'curvature'}, default='none'
-        Regularization type for polynomial coefficients.
+    penalty : {'none', 'l2', 'velocity', 'curvature', 'time-curvature'}, default='none'
+        Regularization type for polynomial coefficients. ``'curvature'`` weights
+        coefficient ``k`` by ``k^4``; ``'time-curvature'`` penalizes the squared second
+        derivative in the rescaled time, ``int_{-1}^{1} |x''(s)|^2 ds``
+        (:func:`chebyshev_time_curvature_matrix`).
 
     Returns
     -------
@@ -209,9 +247,6 @@ def batched_chebyshev_interpolate(
     bmax = t_points.max(dim=1, keepdim=True).values
     s_points = (2 * t_points - (a + bmax)) / (bmax - a)
 
-    v = chebyshev_basis_matrix(s_points, degree)
-    vt = v.transpose(1, 2)
-
     powers = torch.arange(degree + 1, dtype=torch.float32, device=device)
     if penalty == "none" or lambda_reg == 0.0:
         r = torch.zeros_like(powers)
@@ -224,12 +259,21 @@ def batched_chebyshev_interpolate(
     elif penalty == "curvature":
         r = powers ** 4
         r[0] = 0
+    elif penalty == "time-curvature":
+        r = None
     else:
         raise ValueError("Invalid penalty type")
 
-    r_mat = torch.diag(r).unsqueeze(0).expand(bsz, -1, -1).contiguous()
-    lhs = vt @ v + lambda_reg * r_mat
-    rhs = vt @ x_points
+    if r is None:
+        r_full = chebyshev_time_curvature_matrix(degree).to(dtype=torch.float32, device=device)
+    else:
+        r_full = torch.diag(r)
+    r_mat = r_full.unsqueeze(0).expand(bsz, -1, -1).contiguous()
+    # the normal equations square the conditioning of the basis: form and solve them in
+    # float64 (in float32 they fail near the interpolation degree, e.g. degree 20 on 21 nodes)
+    v64 = chebyshev_basis_matrix(s_points, degree, dtype=torch.float64)
+    lhs = v64.transpose(1, 2) @ v64 + lambda_reg * r_mat.double()
+    rhs = v64.transpose(1, 2) @ x_points.double()
     coeffs = torch.linalg.solve(lhs, rhs).float()
 
     def interpolant(t_eval):
@@ -282,6 +326,10 @@ class ChebyshevInterpolant(Interpolant):
     ----------
     reg : float or None, default=None
         Curvature regularization strength used in ``fit``.
+    degree : int or None, default=None
+        Polynomial degree. If ``None``, ``n_nodes - 1`` (interpolation degree).
+    penalty : str, default='curvature'
+        Penalty type passed to :func:`batched_chebyshev_interpolate`.
 
     Attributes
     ----------
@@ -296,8 +344,10 @@ class ChebyshevInterpolant(Interpolant):
 
     """
 
-    def __init__(self, reg=None):
+    def __init__(self, reg=None, degree=None, penalty="curvature"):
         self.reg = reg
+        self.degree = degree
+        self.penalty = penalty
 
     def fit(self, nodes_fit, dist):
         """Fit Chebyshev coefficients from fit data.
@@ -316,12 +366,13 @@ class ChebyshevInterpolant(Interpolant):
         """
         self.t_fit_ = nodes_fit
         self.y_fit_ = dist
+        degree = nodes_fit.shape[1] - 1 if self.degree is None else self.degree
         _, p, p_prime, _ = batched_chebyshev_interpolate(
             nodes_fit,
             dist,
-            degree=nodes_fit.shape[1] - 1,
+            degree=degree,
             lambda_reg=self.reg,
-            penalty="curvature",
+            penalty=self.penalty,
         )
         self.p_ = p
         self.p_prime_ = p_prime

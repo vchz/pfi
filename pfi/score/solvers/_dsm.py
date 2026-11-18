@@ -10,6 +10,7 @@ def _generate_noisy_training_data_batch(
     Dist,
     tp,
     L,
+    kernel="gaussian",
     generator=None,
 ):
     """Generate noisy DSM training inputs in samples-first layout.
@@ -22,6 +23,9 @@ def _generate_noisy_training_data_batch(
         Snapshot times on target device.
     L : int
         Number of noise levels.
+    kernel : {"gaussian", "laplace"}, default="gaussian"
+        Noise kernel; the levels are its standard deviation (Gaussian) or its
+        scale (Laplace).
 
     Returns
     -------
@@ -40,7 +44,15 @@ def _generate_noisy_training_data_batch(
     sigma = torch.as_tensor(geometric_sequence(L), dtype=dtype, device=device)
 
     Dist = Dist.permute(1, 0, 2)  # (nsamples, nsnaps, ndim)
-    noise = torch.randn((nsamples, nsnaps, L, ndim), dtype=dtype, device=device, generator=generator)
+    shape = (nsamples, nsnaps, L, ndim)
+    if kernel == "gaussian":
+        noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
+    elif kernel == "laplace":
+        # inverse-CDF sampling of a standard Laplace variable
+        u = torch.rand(shape, dtype=dtype, device=device, generator=generator) - 0.5
+        noise = -torch.sign(u) * torch.log1p(-2 * u.abs())
+    else:
+        raise ValueError(f"Unknown kernel {kernel!r}: use 'gaussian' or 'laplace'.")
     x_noisy = Dist[:, :, None, :] + sigma[None, None, :, None] * noise  # (nsamples, nsnaps, L, ndim)
 
     x_train = torch.zeros((nsamples, nsnaps, L, ndim + 2), dtype=dtype, device=device)
@@ -61,6 +73,7 @@ def DSM_(
     adaptive_weights=0,
     lr=5e-4,
     scheduler_factory=None,
+    kernel="gaussian",
     verbose=True,
     generator=None,
 ):
@@ -88,6 +101,12 @@ def DSM_(
     scheduler_factory : callable or None, default=None
         Callable ``(optimizer) -> scheduler``. If ``None``, uses
         ``MultiStepLR`` with ``milestones=[2500, 6500, 8500], gamma=0.1``.
+    kernel : {"gaussian", "laplace"}, default="gaussian"
+        Noise kernel ``q(x_noisy | x)``. The learned score is that of the data
+        convolved with the kernel, so it inherits the kernel's tails: Gaussian
+        tails (score growing linearly away from the data) or exponential tails
+        (score tending to ``-1 / scale``). The noise levels are the Gaussian
+        standard deviation or the Laplace scale.
     verbose : bool, default=True
         If ``True``, show progress bars and diagnostics.
 
@@ -114,6 +133,7 @@ def DSM_(
         dist,
         times,
         L,
+        kernel=kernel,
         generator=generator,
     )
 
@@ -157,8 +177,12 @@ def DSM_(
                 x_t = xbatch[:, tind, :, :ndim]
                 x_ref = ybatch[:, tind, :ndim][:, None, :]
 
-                # DSM target: optimal score is -(x_noisy - x_clean) / σ²
-                u_true = (x_t - x_ref) / (sigma_reshaped ** 2)
+                # DSM target (minus the kernel's score): (x_noisy - x_clean) / σ² (Gaussian)
+                # or sign(x_noisy - x_clean) / σ (Laplace of scale σ)
+                if kernel == "gaussian":
+                    u_true = (x_t - x_ref) / (sigma_reshaped ** 2)
+                else:
+                    u_true = torch.sign(x_t - x_ref) / sigma_reshaped
                 residual = u_pred + u_true
                 residual_squared = residual.pow(2).mean(dim=(0, 2))  # mean over (bs, ndim) per L level
                 loss_sum = 0.5 * torch.sum((sigma ** 2) * residual_squared)
