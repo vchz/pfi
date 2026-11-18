@@ -1,59 +1,77 @@
 """Neural-network building blocks and differential operators for PFI."""
 
-import numpy as np
+import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.utils as nn_utils
 from torch.autograd import grad
 
-class LayerNoWN(nn.Module):
-    """Linear layer with Xavier initialization and no weight normalization.
+
+
+def make_linear_layer(in_features, out_features, generator=None, init="kaiming", gain=1):
+    """Create an ``nn.Linear`` layer with controlled weight initialization.
 
     Parameters
     ----------
     in_features : int
-        Input feature dimension.
     out_features : int
-        Output feature dimension.
-    seed : int
-        Random seed used for initialization.
-    activation : torch.nn.Module
-        Activation used in surrounding network to set initialization gain.
+    generator : torch.Generator or None, default=None
+        Local RNG. If ``None``, skips re-initialization (global RNG default).
+    init : {"kaiming", "xavier"}, default="kaiming"
+        ``"xavier"`` uses ``xavier_normal_`` + zero bias (for ``DNN``).
+        ``"kaiming"`` replicates ``nn.Linear.reset_parameters()`` (for ``SpectralNormDNN``).
+    gain : float, default=1
+        Gain forwarded to ``xavier_normal_`` when ``init="xavier"``.
 
+    Returns
+    -------
+    nn.Linear
     """
+    layer = nn.Linear(in_features, out_features)
+    if generator is None:
+        return layer
+    dev = generator.device
+    with torch.no_grad():
+        if init == "xavier":
+            std = gain * (2 / (in_features + out_features)) ** 0.5
+            layer.weight.copy_(torch.randn(layer.weight.shape, generator=generator, device=dev) * std)
+            layer.bias.zero_()
+        else:
+            bound = 1 / in_features ** 0.5
+            layer.weight.copy_(torch.rand(layer.weight.shape, generator=generator, device=dev) * 2 * bound - bound)
+            layer.bias.copy_(torch.rand(layer.bias.shape, generator=generator, device=dev) * 2 * bound - bound)
+    return layer
 
-    def __init__(
-        self,
-        in_features,
-        out_features,
-        seed,
-        activation,
-    ):
-        super(LayerNoWN, self).__init__()
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
-        gain = 5 / 3 if isinstance(activation, nn.Tanh) else 1
-        nn.init.xavier_normal_(self.linear.weight, gain=gain)
-        nn.init.zeros_(self.linear.bias)
 
-    def forward(
-        self,
-        x,
-    ):
-        """Apply the linear map.
+def add_spectral_norm(layer, generator=None):
+    """Wrap ``layer`` with spectral normalization and seed the power-iteration vectors.
 
-        Parameters
-        ----------
-        x : torch.Tensor of shape (..., in_features)
-            Input tensor.
+    ``nn_utils.spectral_norm`` initializes ``weight_u`` and ``weight_v`` from
+    the global RNG.  When a local ``generator`` is provided, those buffers are
+    overwritten here so that the full initialization is reproducible.
 
-        Returns
-        -------
-        y : torch.Tensor of shape (..., out_features)
-            Output tensor.
-        """
-        return self.linear(x)
+    Parameters
+    ----------
+    layer : nn.Linear
+        Layer to wrap.
+    generator : torch.Generator or None, default=None
+        Local RNG used to re-initialize ``weight_u`` / ``weight_v``.
+
+    Returns
+    -------
+    nn.Module
+        Spectrally-normalized layer.
+    """
+    wrapped = nn_utils.spectral_norm(layer)
+    if generator is not None:
+        with torch.no_grad():
+            for name in ("weight_u", "weight_v"):
+                buf = getattr(wrapped, name)
+                v = torch.randn(buf.shape, generator=generator, dtype=buf.dtype, device=generator.device)
+                buf.copy_(v / (v.norm() + 1e-12))
+    return wrapped
+
 
 class DNN(nn.Module):
     """Fully-connected network.
@@ -62,28 +80,26 @@ class DNN(nn.Module):
     ----------
     sizes : list of int
         Layer sizes including input and output dimensions.
-    seed : int, default=0
-        Random seed for layer initialization.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Hidden activation module.
+    generator : torch.Generator or None, default=None
+        Optional RNG for reproducible weight initialization.
 
     """
 
     def __init__(
         self,
         sizes,
-        seed=0,
         activation=nn.ELU(),
+        generator=None,
     ):
         super(DNN, self).__init__()
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        layer = []
+        gain = 5 / 3 if isinstance(activation, nn.Tanh) else 1
+        layers = []
         for i in range(len(sizes) - 2):
-            linear = LayerNoWN(sizes[i], sizes[i + 1], seed, activation)
-            layer += [linear, activation]
-        layer += [LayerNoWN(sizes[-2], sizes[-1], seed, activation)]
-        self.net = nn.Sequential(*layer)
+            layers += [make_linear_layer(sizes[i], sizes[i + 1], generator=generator, init="xavier", gain=gain), activation]
+        layers += [make_linear_layer(sizes[-2], sizes[-1], generator=generator, init="xavier", gain=gain)]
+        self.net = nn.Sequential(*layers)
 
     def forward(
         self,
@@ -110,8 +126,6 @@ class SpectralNormDNN(nn.Module):
     ----------
     sizes : list of int
         Layer sizes including input and output dimensions.
-    seed : int, default=0
-        Random seed for layer initialization.
     dim_x: int, default=None
         The dimension of the x variables to apply spectral norm.
         These are always the first dim_x dimensions of the data.
@@ -120,41 +134,45 @@ class SpectralNormDNN(nn.Module):
         Hidden activation module.
     full : bool, default=False
         If ``True``, also apply spectral normalization to the final layer.
+    generator : torch.Generator or None, default=None
+        Optional RNG for reproducible weight initialization.
 
     """
     def __init__(
         self,
         sizes,
         dim_x=None,
-        seed=0,
         activation=nn.ELU(),
         full=False,
+        generator=None,
     ):
         super(SpectralNormDNN, self).__init__()
-        np.random.seed(seed)
-        torch.manual_seed(seed)
 
         self.dim_x = dim_x if dim_x is not None else sizes[0]
         self.has_t = self.dim_x < sizes[0]
         self.activation = activation
 
-        self.linear_x = nn_utils.spectral_norm(
-            nn.Linear(self.dim_x, sizes[1])
+        self.linear_x = add_spectral_norm(
+            make_linear_layer(self.dim_x, sizes[1], generator=generator, init="kaiming"),
+            generator=generator,
         )
         if self.has_t:
-            self.linear_t = nn.Linear(sizes[0] - self.dim_x, sizes[1])
+            self.linear_t = make_linear_layer(
+                sizes[0] - self.dim_x, sizes[1], generator=generator, init="kaiming"
+            )
 
         layers = []
         for i in range(1, len(sizes) - 2):
-            linear = nn.Linear(sizes[i], sizes[i + 1])
-            linear = nn_utils.spectral_norm(linear)
-            layers.append(linear)
+            layers.append(add_spectral_norm(
+                make_linear_layer(sizes[i], sizes[i + 1], generator=generator, init="kaiming"),
+                generator=generator,
+            ))
             layers.append(activation)
 
-        final_linear = nn.Linear(sizes[-2], sizes[-1])
+        final = make_linear_layer(sizes[-2], sizes[-1], generator=generator, init="kaiming")
         if full:
-            final_linear = nn_utils.spectral_norm(final_linear)
-        layers.append(final_linear)
+            final = add_spectral_norm(final, generator=generator)
+        layers.append(final)
 
         self.rest = nn.Sequential(*layers)
 
@@ -184,16 +202,14 @@ class LinearNN(nn.Module):
     ----------
     sizes : list of int
         Two entries ``[in_dim, out_dim]``.
-    seed : int, default=0
-        Kept for API compatibility.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Kept for API compatibility.
 
     """
 
-    def __init__(self, sizes, seed=0, activation=nn.ELU()):
+    def __init__(self, sizes, activation=nn.ELU()):
         super().__init__()
-        _ = seed, activation
+        _ = activation
         in_dim = int(sizes[0])
         out_dim = int(sizes[-1])
         self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
@@ -221,16 +237,14 @@ class ConstantNN(nn.Module):
     sizes : list of int
         Two entries ``[in_dim, out_dim]``. The matrix ``B`` has shape
         ``(out_dim, in_dim)``.
-    seed : int, default=0
-        Kept for API compatibility.
     activation : torch.nn.Module, default=torch.nn.ELU()
         Kept for API compatibility.
 
     """
 
-    def __init__(self, sizes, seed=0, activation=nn.ELU()):
+    def __init__(self, sizes, activation=nn.ELU()):
         super().__init__()
-        _ = seed, activation
+        _ = activation
         in_dim = int(sizes[0])
         out_dim = int(sizes[-1])
         self.B = nn.Parameter(torch.zeros(out_dim, in_dim))
@@ -271,12 +285,14 @@ class FastTensorDataLoader:
         *tensors,
         batch_size=32,
         shuffle=False,
+        generator=None,
     ):
         assert all(t.shape[0] == tensors[0].shape[0] for t in tensors)
         self.tensors = tensors
         self.dataset_len = self.tensors[0].shape[0]
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.generator = generator
         n_batches, remainder = divmod(self.dataset_len, self.batch_size)
         if remainder > 0:
             n_batches += 1
@@ -293,7 +309,9 @@ class FastTensorDataLoader:
             Iterator instance.
         """
         if self.shuffle:
-            r = torch.randperm(self.dataset_len)
+            r = torch.randperm(self.dataset_len, 
+                               generator=self.generator, 
+                               device=self.generator.device)
             self.tensors = [t[r] for t in self.tensors]
         self.i = 0
         return self
@@ -427,3 +445,44 @@ def symsqrt(matrix):
     v = v[..., above_cutoff]
     # compose the square root matrix
     return (v * s.sqrt().unsqueeze(-2)) @ v.transpose(-2, -1)
+
+
+def clone_module(module):
+    """Clone a ``torch.nn.Module`` safely, sharing registered sub-module references.
+
+    Standard ``deepcopy`` fails when a module contains non-leaf tensors, for
+    example the ``weight_u`` / ``weight_v`` buffers written by spectral-norm
+    during a forward pass.  This function works around the issue by temporarily
+    detaching all registered sub-modules (``module._modules``) from the module
+    registry, deepcopying only the skeleton (buffers and plain attributes, which
+    are always leaf tensors), and then re-attaching the sub-modules by shared
+    reference on both the original and the clone.
+
+    Sharing sub-module references is correct for our use case: the sub-modules
+    attached to a flow model (e.g. a pre-trained score model) are never modified
+    during flow training.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+        Module to clone.
+
+    Returns
+    -------
+    torch.nn.Module
+        Cloned module with the same skeleton and shared sub-module references.
+    """
+    saved = {}
+    for name in list(module._modules.keys()):
+        saved[name] = module._modules.pop(name)
+
+    try:
+        cloned = copy.deepcopy(module)
+    finally:
+        for name, submod in saved.items():
+            setattr(module, name, submod)
+
+    for name, submod in saved.items():
+        setattr(cloned, name, submod)
+
+    return cloned

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pfi"
-version = "0.1.0"
+version = "0.2.0"
 description = "PFI package"
 dependencies = [
   "numpy",
@@ -14,6 +14,8 @@ dependencies = [
   "geomloss",
   "torchcubicspline @ git+https://github.com/patrick-kidger/torchcubicspline.git",
   "pytest",
+  "scikit-learn >= 1.3",
+  "sklearn-compat >= 0.1",
 ]
 
 [tool.setuptools]

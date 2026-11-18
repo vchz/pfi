@@ -3,9 +3,10 @@
 import torch
 from tqdm import tqdm
 
-def sample_minibatch(
+def _sample_minibatch(
     dist,
     bs,
+    generator=None,
 ):
     """Sample an independent mini-batch at each snapshot.
 
@@ -27,7 +28,7 @@ def sample_minibatch(
 
     batch = torch.zeros((nsnaps, bs, dist[0].shape[1]), dtype=dtype, device=device)
     for k in range(nsnaps):
-        idx = torch.randint(0, dist[k].shape[0], (bs,), device=dist[k].device)
+        idx = torch.randint(0, dist[k].shape[0], (bs,), device=dist[k].device, generator=generator)
         batch[k] = dist[k].index_select(0, idx)
     return batch
 
@@ -66,7 +67,7 @@ def _custom_ode_int(
     -------
     x : torch.Tensor of shape (batch_size, ndim)
         Integrated final states.
-    logw : torch.Tensor of shape (batch_size,)
+    log_mass_1 : torch.Tensor of shape (batch_size,)
         Integrated final log-masses.
     reg : torch.Tensor of shape ()
         Accumulated regularization contribution over the interval.
@@ -77,7 +78,7 @@ def _custom_ode_int(
     h = delta_t / n_steps
 
     x = x0
-    logw = logw0
+    log_mass = logw0
     t = torch.full((batch_size,), t0, dtype=x0.dtype, device=x0.device)
     reg = torch.zeros((batch_size,), dtype=x0.dtype, device=x0.device)
     for _ in range(n_steps):
@@ -89,11 +90,13 @@ def _custom_ode_int(
             g = growth_model(inp).squeeze(-1)
 
         x = x + h * drift
-        logw = logw + h * g
-        reg = reg + h * (drift.pow(2).sum(dim=1) + alpha_wfr * g.pow(2)) * torch.exp(logw)
+        log_mass = log_mass + h * g
+        # WFR regularization: kinetic energy + growth rate, weighted by current mass
+        reg = reg + h * (drift.pow(2).sum(dim=1) + alpha_wfr * g.pow(2)) * torch.exp(log_mass)
         t = t + h
 
-    return x, logw, reg.sum()*(t1 - t0)
+    # Scale by Δt so total reg is independent of n_steps
+    return x, log_mass, reg.sum() * (t1 - t0)
 
 def UPFI_(
     dist,
@@ -108,8 +111,9 @@ def UPFI_(
     reg=0.1,
     alpha_wfr=1.0,
     reach=10.0,
-    scheduler_kwargs=None,
+    scheduler_factory=None,
     verbose=True,
+    generator=None,
 ):
     """Fit flow and growth jointly with teacher-forced ODE matching.
 
@@ -127,20 +131,25 @@ def UPFI_(
         Number of optimizer iterations.
     lr : float, default=1e-3
         Learning rate.
-    n_steps : int, default=20
+    bs : int, default=512
+        Number of sampled trajectories per optimization step.
+    n_steps : int, default=2
         Number of integration steps between two snapshots.
-    reg_wfr : float, default=0.1
+    reg_wfr : float, default=1
         Coefficient for WFR-style regularization.
     reg : float, default=0.1
         Coefficient for entropic regularization in the loss.
     alpha_wfr : float, default=1.0
         Relative weight of growth contribution in WFR-style regularization.
-    reach : float, default=5.0
+    reach : float, default=10.0
         Reach parameter passed to ``geomloss.SamplesLoss``.
-    scheduler_kwargs : dict or None, default=None
-        Optional kwargs for ``MultiStepLR``.
+    scheduler_factory : callable or None, default=None
+        Callable ``(optimizer) -> scheduler``. If ``None``, uses
+        ``MultiStepLR`` with ``milestones=[1000, 1500, 8000, 15000], gamma=0.1``.
     verbose : bool, default=True
         If ``True``, display progress bar.
+    generator : torch.Generator or None, default=None
+        Optional RNG for reproducible sampling.
 
     Returns
     -------
@@ -158,20 +167,6 @@ def UPFI_(
     nsnaps = len(dist)
 
     nsamples = min(s.shape[0] for s in dist)
-    dist_tensor = torch.stack(
-        [s[torch.randperm(s.shape[0], device=s.device)[:nsamples]] for s in dist],
-        dim=0,
-    )
-    t_tensor = (
-        times.to(device=device, dtype=dist_tensor.dtype)[:, None, None]
-        .expand(dist_tensor.shape[0], dist_tensor.shape[1], 1)
-    )
-    scale_data = torch.cat([dist_tensor, t_tensor], dim=-1)
-    
-    if hasattr(net, 'init_model'):
-        net.init_model(scale_data)
-    if growth_model is not None and hasattr(growth_model, 'init_model'):
-        growth_model.init_model(scale_data)
 
     if bs is None:
         bs = nsamples
@@ -179,9 +174,7 @@ def UPFI_(
 
     mass_vec = torch.tensor([d.shape[0] / dist[0].shape[0] for d in dist], dtype=dtype, device=device)
 
-    drift_net = net.to(device)
-    if growth_model is not None:
-        growth_model = growth_model.to(device)
+    drift_net = net
 
     if growth_model is None:
         reach = None
@@ -192,10 +185,10 @@ def UPFI_(
         params.append({"params": growth_model.parameters(), "lr": lr})
     optimizer = torch.optim.Adam(params)
 
-    scheduler_kwargs = {} if scheduler_kwargs is None else dict(scheduler_kwargs)
-    default_sched = {"milestones": [1000, 1500, 8000, 15000], "gamma": 0.1}
-    default_sched.update(scheduler_kwargs)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **default_sched)
+    if scheduler_factory is None:
+        def scheduler_factory(opt):
+            return torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[1000, 1500, 8000, 15000], gamma=0.1)
+    scheduler = scheduler_factory(optimizer)
 
     loss_fn = geomloss.SamplesLoss(loss="sinkhorn", reach=reach, blur=reg)
 
@@ -204,32 +197,32 @@ def UPFI_(
     for _ in pbar:
         optimizer.zero_grad()
 
-        x_batch_t = sample_minibatch(dist, bs=bs)
-        x_batch = [x_batch_t[k] for k in range(nsnaps)]
+        x_batch_t = _sample_minibatch(dist, bs=bs, generator=generator)
 
         x_hat = []
         logw_hat = []
         reg_loss = torch.zeros((), dtype=dtype, device=device)
         for k in range(nsnaps - 1):
-            x0 = x_batch[k]
-            lw0 = torch.log(mass_vec[k] / bs) * torch.ones((bs,), dtype=dtype, device=device)
-            x1, lw1, reg_k = _custom_ode_int(
+            x0 = x_batch_t[k]
+            # Log-mass initialized to log(relative snapshot size / batch_size)
+            log_mass_0 = torch.log(mass_vec[k] / bs) * torch.ones((bs,), dtype=dtype, device=device)
+            x1, log_mass_1, reg_interval = _custom_ode_int(
                 drift_net,
                 growth_model,
                 x0,
                 times[k],
                 times[k + 1],
                 n_steps,
-                lw0,
+                log_mass_0,
                 alpha_wfr,
             )
             x_hat.append(x1)
-            logw_hat.append(lw1)
-            reg_loss = reg_loss + reg_k
+            logw_hat.append(log_mass_1)
+            reg_loss = reg_loss + reg_interval
 
         x_hat = torch.stack(x_hat, dim=0)
         logw_hat = torch.stack(logw_hat, dim=0)
-        x_obs = torch.stack(x_batch[1:], dim=0)
+        x_obs = torch.stack([x_batch_t[k] for k in range(1, nsnaps)], dim=0)
         logw_obs = torch.stack(
             [torch.log(mass_vec[k] / bs) * torch.ones((bs,), dtype=dtype, device=device) for k in range(1, nsnaps)],
             dim=0,

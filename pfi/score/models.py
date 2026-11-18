@@ -21,8 +21,6 @@ class OUScore(AutonomousModelMixin, Model):
         Initial covariance.
     D : torch.Tensor, shape (Ndim, Ndim)
         Diffusion matrix.
-    **kwargs : dict
-        Forwarded to ``pfi.base.Model`` after overriding ``net_cls``.
 
     Attributes
     ----------
@@ -31,28 +29,19 @@ class OUScore(AutonomousModelMixin, Model):
 
     """
 
-    def __init__(
-        self,
-        m0,
-        S0,
-        D,
-        **kwargs,
-    ):
-        kwargs.pop("sizes", None)
-        kwargs.pop("net_cls", None)
-        kwargs.pop("feature_norm", None)
-        kwargs.pop("batch_norm", None)
-        super(OUScore, self).__init__(
-            sizes=[],
-            net_cls=ConstantNN,
-            feature_norm=None,
-            batch_norm=None,
-            **kwargs,
-        )
-        self.Ndim_ = int(m0.shape[0])
+    def __init__(self, m0, S0, D):
+        super(OUScore, self).__init__()
         self.register_buffer("S0", S0)
         self.register_buffer("m0", m0)
         self.register_buffer("D", D)
+
+    def init_model(self, X, generator=None):
+        self.Ndim_ = int(X.shape[-1] - 1)
+        if self.net_ is None:
+            self.net_ = ConstantNN([self.Ndim_, self.Ndim_]).to(
+                device=X.device, dtype=X.dtype
+            )
+        return self
 
     def dim_output(self):
         """Return output dimension of the constant matrix network.
@@ -107,8 +96,6 @@ class DSMScore(GenericModelMixin, Model):
 
     Parameters
     ----------
-    noise_lvl : float, default=0.0
-        Default sigma used at inference when sigma is not provided.
     **kwargs : dict
         Forwarded to ``pfi.base.Model``.
 
@@ -116,11 +103,29 @@ class DSMScore(GenericModelMixin, Model):
 
     def __init__(
         self,
-        noise_lvl=0.0,
         **kwargs,
     ):
         super(DSMScore, self).__init__(**kwargs)
-        self.noise_lvl = float(noise_lvl)
+
+    def init_model(self, X, generator=None):
+        """Initialize network and set noise_lvl from the minimum sigma in training data.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Noisy training inputs with last dimension ``ndim + 2``
+            (layout ``[x_1, ..., x_ndim, sigma, t]``).
+        generator : torch.Generator or None, default=None
+            Optional RNG for reproducible weight initialization.
+
+        Returns
+        -------
+        self : DSMScore
+            Initialized model.
+        """
+        super().init_model(X, generator=generator)
+        self.noise_lvl_ = float(X[..., self.Ndim_ - 1].min())
+        return self
 
     def dim_output(self):
         """Return spatial score output dimension.
@@ -132,30 +137,16 @@ class DSMScore(GenericModelMixin, Model):
         """
         return self.Ndim_ - 1
 
-    def _apply_feature_norm(self, x):
-        """Apply feature normalization on spatial dimensions only.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor where the final dimensions are ordered as
-            ``[..., x_1, ..., x_ndim, sigma, t]``.
+    def dim_spatial(self):
+        """Return number of spatial dimension of the score network.
 
         Returns
         -------
-        torch.Tensor
-            Normalized tensor with sigma/time dimensions left unchanged.
+        int
+            Number of spatial dimension in net_ (by definition the first dimensions).
         """
-        if not self.feature_norm or "zscore" not in self.feature_norm:
-            return x
-
-        x_sp = x[..., : self.Ndim_ - 1]
-        center = "nocenter" not in self.feature_norm
-        mu = x_sp.mean(dim=-1, keepdim=True) if center else 0
-        sd = x_sp.std(dim=-1, keepdim=True, unbiased=True)
-        x_sp = (x_sp - mu) / (sd + 1e-5)
-        return torch.cat([x_sp, x[..., self.Ndim_ - 1 :]], dim=-1)
-
+        return self.Ndim_ - 1
+    
     def forward(self, Xtrain):
         """Evaluate DSM score.
 
@@ -195,7 +186,7 @@ class DSMScore(GenericModelMixin, Model):
         if Xtrain.shape[-1] == self.Ndim_:
             sigma = torch.full(
                 (*Xtrain.shape[:-1], 1),
-                self.noise_lvl,
+                self.noise_lvl_,
                 dtype=Xtrain.dtype,
                 device=Xtrain.device,
             )

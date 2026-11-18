@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from pfi.flow.couplings import pairwise_OT
+from pfi.flow.paths import ExactOT
 from pfi.flow.interpolants import ChebyshevInterpolant
 from pfi.flow.models import OUFlow
 from pfi.score.models import OUScore
@@ -42,17 +42,14 @@ def test_chebyshev_interpolant_OU():
     X = X_from_snapshots(samples_full, tt)
 
     np.random.seed(0)
-    batch_ot_samples, _ = pairwise_OT(
-        [torch.tensor(s, dtype=torch.float32) for s in samples_full],
-        reg_m=None,
-        method="exact",
-    )
+    snaps = [torch.tensor(s, dtype=torch.float32) for s in samples_full]
+    batch_ot_samples, _ = ExactOT().fit(snaps).sample()
 
     npoints = 50
     nodes_fit = torch.tensor(tt, dtype=torch.float32)[None, :].repeat(nsamples, 1)
     nodes_eval = torch.tensor(np.linspace(tt[0], tt[-1], npoints), dtype=torch.float32)[None, :].repeat(nsamples, 1)
 
-    dist = torch.permute(batch_ot_samples[:, :, 0:ndim], (1, 0, 2))
+    dist = batch_ot_samples[:, :, 0:ndim]
 
     interp = ChebyshevInterpolant(reg = 0.01)
 
