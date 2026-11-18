@@ -12,9 +12,9 @@ Two families, named after the two objects of optimal transport:
 - :class:`PlanPaths` (transport plans): random paths through the observed cells, a Markov
   chain whose transitions are the plans between consecutive (pushed) snapshots. The
   snapshot marginals are reproduced exactly. Subclasses: :class:`Independent`,
-  :class:`ExactOT`, :class:`Sinkhorn`, :class:`UnbalancedSinkhorn`. With ``push=None`` the
-  plan couplings give the same trajectories as ``couplings.pairwise_OT`` (same random
-  draws for one mini-batch, the same construction for several).
+  :class:`ExactOT`, :class:`Sinkhorn`, :class:`UnbalancedSinkhorn`. With ``push=None``
+  they are the multi-marginal OT trajectories of the original PFM (pairwise plans glued
+  along shared cells).
 - :class:`MapPaths` (transport maps): deterministic paths, a cloud of nodes moved from one
   snapshot time to the next by a map. The nodes are not observed cells and the snapshot
   marginals are only approximately reproduced. Subclasses: :class:`DebiasedSinkhorn`,
@@ -30,7 +30,113 @@ from abc import ABC, abstractmethod
 import ot
 import torch
 
-from .couplings import _compute_pairwise_OT_plan, _sample_trajectory
+
+# ---------------------------------------------------------------------------------------
+# pairwise transport plans and Markov-chain sampling (plan-based paths)
+# ---------------------------------------------------------------------------------------
+
+def _compute_pairwise_OT_plan(
+    x,
+    y,
+    mass_x,
+    mass_y,
+    reg=0.1,
+    reg_m=None,
+    method="sinkhorn",
+):
+    """Compute a pairwise OT or UOT plan between two snapshots.
+
+    Parameters
+    ----------
+    x : torch.Tensor of shape (n_x, ndim)
+        Source snapshot.
+    y : torch.Tensor of shape (n_y, ndim)
+        Target snapshot.
+    mass_x : float or torch.Tensor
+        Total mass assigned to ``x``.
+    mass_y : float or torch.Tensor
+        Total mass assigned to ``y``.
+    reg : float, default=0.1
+        Entropic regularization strength.
+    reg_m : float or None, default=None
+        Unbalanced transport mass regularization. If ``None``, solve the
+        balanced problem.
+    method : str, default='sinkhorn'
+        POT backend name.
+
+    Returns
+    -------
+    torch.Tensor of shape (n_x, n_y)
+        Transport plan normalized to sum to one.
+
+    Raises
+    ------
+    ValueError
+        If the computed plan has near-zero total mass.
+    """
+    nx = x.shape[0]
+    ny = y.shape[0]
+    c = ot.dist(x, y, metric="sqeuclidean")
+    a = torch.ones((nx,), dtype=x.dtype, device=x.device) * (mass_x / nx)
+    b = torch.ones((ny,), dtype=y.dtype, device=y.device) * (mass_y / ny)
+
+    if reg_m is None:
+        if method == "exact":
+            plan = ot.emd(a, b, c, numItermax=1000000)
+        else:
+            plan = ot.sinkhorn(
+                a,
+                b,
+                c,
+                reg=reg,
+                method=method,
+                reg_type="kl",
+                stopThr=1e-6,
+                numItermax=1000000,
+            )
+    else:
+        plan = ot.sinkhorn_unbalanced(
+            a,
+            b,
+            c,
+            reg=reg,
+            reg_m=reg_m,
+            method=method,
+            reg_type="kl",
+            stopThr=1e-7,
+            numItermax=500000,
+        )
+
+    if torch.isclose(plan.sum(), torch.as_tensor(0.0, dtype=plan.dtype, device=plan.device), atol=1e-8):
+        raise ValueError("OT plan has near-zero mass; adjust solver/regularization settings.")
+    return plan / plan.sum()
+
+
+def _sample_trajectory(plan_list, num_samples, generator=None):
+    """Sample index trajectories from chained pairwise plans.
+
+    Parameters
+    ----------
+    plan_list : list of torch.Tensor
+        Consecutive transport plans.
+    num_samples : int
+        Number of stitched trajectories to sample.
+
+    Returns
+    -------
+    list of torch.Tensor
+        Sequence of index tensors, one per snapshot.
+    """
+    device = plan_list[0].device
+    n0 = plan_list[0].shape[0]
+    traj = [torch.randint(0, n0, (num_samples,), device=device, generator=generator)]
+
+    for k in range(len(plan_list)):
+        probs = plan_list[k][traj[k]]
+        probs = probs / probs.sum(dim=1, keepdim=True)
+        next_idx = torch.multinomial(probs, num_samples=1, generator=generator).squeeze(1)
+        traj.append(next_idx)
+    return traj
 
 
 class PathEnsemble(ABC):
@@ -152,7 +258,7 @@ class PlanPaths(PathEnsemble):
     sub-sampled in every snapshot, and :meth:`plan` couples the (pushed) cells of
     snapshot k with the cells of snapshot k + 1. Paths start uniformly in the first
     snapshot and draw each next cell from the current cell's row of the plan (Markov
-    gluing), as in ``couplings.pairwise_OT``, whose helpers are used here.
+    gluing).
 
     Parameters
     ----------
@@ -223,7 +329,7 @@ class PlanPaths(PathEnsemble):
         return self
 
     def _path_masses(self, plans, traj, ntraj):
-        """Masses of the sampled paths: snapshot-size ratios, as in ``pairwise_OT``."""
+        """Masses of the sampled paths: snapshot-size ratios."""
         return (self.masses_[:, None] / self.masses_[0]).expand(-1, ntraj).clone()
 
     def sample(self, n_paths=None, generator=None):
@@ -345,7 +451,7 @@ class Sinkhorn(PlanPaths):
     Parameters
     ----------
     reg : float, default=0.1
-        Entropic regularization (on the squared Euclidean cost, as in ``pairwise_OT``).
+        Entropic regularization (on the squared Euclidean cost).
     method : str, default='sinkhorn'
         POT backend name.
     n_batches : int, default=1
@@ -373,7 +479,7 @@ class UnbalancedSinkhorn(Sinkhorn):
     """Unbalanced entropic plans (POT ``sinkhorn_unbalanced``).
 
     Snapshot masses are proportional to the snapshot sizes, and the paths carry masses
-    computed from the plans as in ``pairwise_OT`` with ``reg_m``.
+    computed from the plans (relative mass growth along each path).
 
     Parameters
     ----------
@@ -412,7 +518,7 @@ class UnbalancedSinkhorn(Sinkhorn):
         )
 
     def _path_masses(self, plans, traj, ntraj):
-        # same computation as pairwise_OT with reg_m, kept identical (normalization included)
+        # masses from the chained plans (normalization as in the original PFM code)
         nsnaps = len(traj)
         dtype = plans[0].dtype
         device = plans[0].device

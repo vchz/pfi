@@ -2,6 +2,16 @@
 
 PFI (Probability Flow Inference) provides estimators to learn a score model and a probability-flow model from time-resolved cross-sectional data. The package is organized around a high-level composite estimator API, and a lower-level API for users who want to control the score stage, the flow stage, or the model classes directly.
 
+## Package structure
+
+| Module | Content |
+| --- | --- |
+| `pfi` | [`make_pfi_estimator`](api/make_pfi_estimator.md) and the composite [`PFI`](api/PFI.md) estimator (score stage, then flow stage). |
+| `pfi.score` | [`ScoreEstimator`](api/score/ScoreEstimator.md); score models in `pfi.score.models` ([`DSMScore`](api/score/models/DSMScore.md), `OUScore`); the denoising score matching solver `DSM_` in `pfi.score.solvers`. |
+| `pfi.flow` | [`FlowEstimator`](api/flow/FlowEstimator.md); flow and growth models in `pfi.flow.models` (`CLEFlow`, `MultiplicativeFlow`, `AdditiveFlow`, `AutonomousODEFlow`, `ODEFlow`, `OUFlow`, `AutonomousGrowth`, ...); interpolants in `pfi.flow.interpolants`; path ensembles in `pfi.flow.paths`; solvers in `pfi.flow.solvers`. |
+| `pfi.base` | `Model`, the base class of every score, flow and growth model, and its mixins (network architecture, input normalization, output perturbation). |
+| `pfi.utils` | data loading and conversion (`pfi.utils.data`), simulators of reference processes (`pfi.utils.simulations`: toggle switch, Ornstein-Uhlenbeck), and neural-network building blocks (`pfi.utils.nns`). |
+
 ## Installation
 
 ```bash
@@ -52,7 +62,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 score_model = DSMScore(
     sizes=[128, 128, 128, 128],
-    noise_lvl=0.01,
     batch_norm="zscore",
 )
 
@@ -81,12 +90,15 @@ This is the standard high-level usage pattern. For the complete signature, see [
 
 The score stage is exposed through [`ScoreEstimator`](api/score/ScoreEstimator.md). The solver currently supported there is:
 
-- `dsm`: denoising score matching, taken from: <https://doi.org/10.1162/NECO_a_00142>, <https://doi.org/10.48550/arXiv.1907.05600>.
+- `dsm`: denoising score matching, taken from: <https://doi.org/10.1162/NECO_a_00142>, <https://doi.org/10.48550/arXiv.1907.05600>. The noise kernel is Gaussian by default; `solver_kwargs={"kernel": "laplace"}` uses a Laplace kernel, whose score tends to a constant away from the data instead of growing linearly.
 
 The flow stage is exposed through [`FlowEstimator`](api/flow/FlowEstimator.md). The main solver names are:
 
 - `pfm`: the flow-matching solver, please cite: <https://doi.org/10.48550/arXiv.2604.25062>.
+- `pfm-linear`: the same procedure, solved in closed form for the linear [`OUFlow`](api/flow/models/OUFlow.md) model.
 - `upfi`: the neural-ODE-style UPFI solver, please cite: <https://doi.org/10.48550/arXiv.2505.13197>, <https://doi.org/10.1073/pnas.2420621122>.
+- `future.ufm_ot`, `future.ufm_uot`: experimental unbalanced flow-matching solvers.
+- `external.deepruotv2`: wrapper of an external solver, for comparison.
 
 ## Low level usage
 
@@ -130,9 +142,36 @@ The flow-stage methods are:
 - [`FlowEstimator.sample`](api/flow/FlowEstimator.md): simulate trajectories from initial states
 - [`FlowEstimator.score`](api/flow/FlowEstimator.md): push source samples to the next later target time and compare them to target samples
 
-For concrete runnable workflows, use the notebooks in the examples folder:
+## Trajectories: path ensembles and iterated coupling
 
-- <https://github.com/vchz/pfi/tree/main/examples>
+Flow matching regresses the model velocity on trajectories through the snapshots. Their construction is set by the `paths` solver argument, an object from `pfi.flow.paths`, used like the `interp` argument for the interpolant:
+
+- plan-based paths, random paths through the observed cells drawn from transport plans between consecutive snapshots: `Independent`, `ExactOT` (the default), `Sinkhorn`, `UnbalancedSinkhorn`;
+- map-based paths, a cloud of nodes moved from one snapshot to the next by a transport map: `DebiasedSinkhorn` (debiased entropic map), and `GaussianOT`, `GaussianDebiasedSinkhorn` for Gaussian snapshots.
+
+With `n_rounds > 1`, the coupling is iterated: every round builds the paths again with the current model's flow as reference dynamics, and retrains the model.
+
+```python
+from pfi.flow.interpolants import ChebyshevInterpolant
+from pfi.flow.paths import DebiasedSinkhorn
+
+flow_est = FlowEstimator(
+    flow=CLEFlow(score=score_est.model_, lx=1.0),
+    solver="pfm",
+    solver_kwargs={
+        "interp": ChebyshevInterpolant(),
+        "paths": DebiasedSinkhorn(reg=1.0),
+        "n_rounds": 5,
+    },
+    device=device,
+)
+```
+
+For concrete runnable workflows, use the notebooks in the examples folder (<https://github.com/vchz/pfi/tree/main/examples>):
+
+- `ornstein_uhlenbeck.ipynb`: inference of a linear Ornstein-Uhlenbeck process;
+- `toggle_switch.ipynb`: a two-gene toggle switch with growth;
+- `interpolants.ipynb`: the interpolants on OT trajectories.
 
 For the full public API reference, browse:
 
